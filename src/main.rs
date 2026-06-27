@@ -13,7 +13,6 @@ use cosmic::iced::window::Id;
 use cosmic::cosmic_config::CosmicConfigEntry;
 use cosmic::iced::{time, Subscription};
 use cosmic::prelude::*;
-use cosmic::Application;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -219,7 +218,12 @@ impl cosmic::Application for Window {
                 return Task::none();
             }
             Message::SetHistoryPath(s) => {
-                self.config.history_path = if s.trim().is_empty() { None } else { Some(s) };
+                let trimmed = s.trim();
+                self.config.history_path = if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                };
                 self.sample = usage::read_latest(&self.config.history_path_resolved());
                 self.save_config();
                 return Task::none();
@@ -227,6 +231,7 @@ impl cosmic::Application for Window {
             Message::PopupClosed(id) => {
                 if self.popup == Some(id) {
                     self.popup = None;
+                    self.popup_kind = PopupKind::Info;
                 }
             }
         }
@@ -321,7 +326,7 @@ impl Window {
     /// failure). Mirrors the stock-applet pattern: open a `Config` handler for
     /// the app id + schema version, then `write_entry`.
     fn save_config(&self) {
-        if let Ok(h) = cosmic::cosmic_config::Config::new(Self::APP_ID, config::CONFIG_VERSION) {
+        if let Ok(h) = cosmic::cosmic_config::Config::new(config::CONFIG_ID, config::CONFIG_VERSION) {
             if let Err(e) = self.config.write_entry(&h) {
                 eprintln!("config write failed: {e:?}");
             }
