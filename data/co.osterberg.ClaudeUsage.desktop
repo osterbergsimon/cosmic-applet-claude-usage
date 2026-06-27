@@ -8,3 +8,5 @@ Categories=COSMIC;
 Keywords=COSMIC;Applet;
 NoDisplay=true
 X-CosmicApplet=true
+X-CosmicShrinkable=true
+X-CosmicHoverPopup=Auto
