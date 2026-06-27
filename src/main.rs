@@ -4,9 +4,12 @@ mod config;
 mod indicator;
 mod usage;
 mod view;
+mod watch;
 
-use cosmic::iced::Subscription;
+use cosmic::iced::{time, Subscription};
 use cosmic::prelude::*;
+use std::path::PathBuf;
+use std::time::Duration;
 
 use config::Config;
 use indicator::{indicator_state, IndicatorState};
@@ -94,8 +97,16 @@ impl cosmic::Application for Window {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        // A file watcher is wired in here in Task 6.
-        Subscription::none()
+        // inotify watch on the usage file: emits Reload (near-instant) on change.
+        // The path doubles as the subscription's identity (run_with hashes it).
+        let path = self.config.history_path_resolved();
+        let file = Subscription::run_with(path, |p: &PathBuf| {
+            watch::file_stream(p.clone())
+        });
+        // 30s tick: re-reads the file and refreshes `now`, so staleness and
+        // countdowns advance even when the file itself is idle.
+        let tick = time::every(Duration::from_secs(30)).map(|_| Message::Reload);
+        Subscription::batch([file, tick])
     }
 
     /// The applet's button in the panel renders the real indicator.
