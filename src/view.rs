@@ -127,17 +127,6 @@ pub fn indicator_view<'a>(state: &IndicatorState, cfg: &Config) -> Element<'a, M
     row.into()
 }
 
-/// One-line hover summary: `Session X% (resets in …) · Weekly Y% (resets in …)`.
-pub fn tooltip_text(sample: &UsageSample, now: i64) -> String {
-    format!(
-        "Session {}% (resets in {}) · Weekly {}% (resets in {})",
-        (sample.session * 100.0).round() as i64,
-        format_countdown(sample.session_reset - now),
-        (sample.weekly * 100.0).round() as i64,
-        format_countdown(sample.weekly_reset - now),
-    )
-}
-
 /// Soonest upcoming reset across both budgets, as "resets in X" — used for the
 /// optional reset text beside the indicator when `show_reset` is enabled.
 pub fn reset_label(sample: &UsageSample, now: i64) -> String {
@@ -156,7 +145,8 @@ fn budget_row<'a>(name: &str, value: f32, reset: i64, now: i64) -> Element<'a, M
         .into()
 }
 
-/// The click popup contents: both budgets with percent and reset countdowns.
+/// The click popup contents: both budgets with percent and reset countdowns,
+/// plus a button to open the settings panel.
 pub fn popup_view<'a>(sample: &UsageSample, now: i64, _cfg: &Config) -> Element<'a, Message> {
     widget::Column::new()
         .spacing(12)
@@ -173,6 +163,72 @@ pub fn popup_view<'a>(sample: &UsageSample, now: i64, _cfg: &Config) -> Element<
             sample.weekly_reset,
             now,
         ))
+        .push(widget::button::text("⚙ Settings").on_press(Message::ToggleSettings))
+        .into()
+}
+
+/// The settings panel: dropdowns/toggles/sliders bound to config fields. Each
+/// control emits a `Set*` message which mutates and persists the config.
+pub fn settings_view<'a>(cfg: &Config) -> Element<'a, Message> {
+    use crate::settings::{
+        scope_from_index, scope_index, style_from_index, style_index, SCOPE_LABELS, STYLE_LABELS,
+    };
+
+    let scope = widget::dropdown(
+        &SCOPE_LABELS[..],
+        Some(scope_index(cfg.scope)),
+        |i| Message::SetScope(scope_from_index(i)),
+    );
+
+    let style = widget::dropdown(
+        &STYLE_LABELS[..],
+        Some(style_index(cfg.style)),
+        |i| Message::SetStyle(style_from_index(i)),
+    );
+
+    let amber_pct = (cfg.thresholds.amber * 100.0).round() as i64;
+    let red_pct = (cfg.thresholds.red * 100.0).round() as i64;
+    // The iced slider requires its value type to impl `Into<f64>`, which `u64`
+    // does not; use `u32` for the widget and map back to `u64` in the message.
+    let stale_mins = (cfg.stale_after / 60).max(1) as u32;
+
+    widget::Column::new()
+        .spacing(8)
+        .padding(12)
+        .push(widget::text("Settings").size(16))
+        .push(widget::text("Scope").size(12))
+        .push(scope)
+        .push(widget::text("Style").size(12))
+        .push(style)
+        .push(
+            widget::toggler(cfg.show_percent)
+                .on_toggle(Message::SetShowPercent)
+                .label("Show percent".to_string())
+                .text_size(14),
+        )
+        .push(
+            widget::toggler(cfg.show_reset)
+                .on_toggle(Message::SetShowReset)
+                .label("Show reset".to_string())
+                .text_size(14),
+        )
+        .push(widget::text(format!("Amber threshold: {amber_pct}%")).size(12))
+        .push(widget::slider(0.0..=1.0, cfg.thresholds.amber, Message::SetAmber))
+        .push(widget::text(format!("Red threshold: {red_pct}%")).size(12))
+        .push(widget::slider(0.0..=1.0, cfg.thresholds.red, Message::SetRed))
+        .push(widget::text(format!("Stale after: {stale_mins} min")).size(12))
+        .push(widget::slider(1..=30u32, stale_mins, |v| {
+            Message::SetStaleAfterMins(v as u64)
+        }))
+        .push(widget::text("History path").size(12))
+        .push(
+            widget::text_input(
+                "~/.claude/usage-history.jsonl",
+                cfg.history_path.clone().unwrap_or_default(),
+            )
+            .on_input(Message::SetHistoryPath),
+        )
+        .push(widget::button::text("← Back").on_press(Message::ShowInfo))
         .into()
 }
 
@@ -180,22 +236,6 @@ pub fn popup_view<'a>(sample: &UsageSample, now: i64, _cfg: &Config) -> Element<
 mod ttests {
     use super::*;
     use crate::usage::UsageSample;
-
-    #[test]
-    fn tooltip_renders_both_with_resets() {
-        let now = 2000;
-        let s = UsageSample {
-            session: 0.38,
-            weekly: 0.12,
-            session_reset: now + 60 * 60 * 2 + 60 * 14, // 2h 14m
-            weekly_reset: now + 60 * 60 * 24 * 4 + 60 * 60 * 3, // 4d 3h
-            ts: 0,
-        };
-        assert_eq!(
-            tooltip_text(&s, now),
-            "Session 38% (resets in 2h 14m) · Weekly 12% (resets in 4d 3h)"
-        );
-    }
 
     #[test]
     fn reset_label_uses_soonest() {

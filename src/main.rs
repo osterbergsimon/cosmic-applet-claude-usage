@@ -3,20 +3,30 @@
 mod config;
 mod fill;
 mod indicator;
+mod settings;
 mod usage;
 mod view;
 mod watch;
 
 use cosmic::iced::platform_specific::shell::wayland::commands::popup::{destroy_popup, get_popup};
 use cosmic::iced::window::Id;
+use cosmic::cosmic_config::CosmicConfigEntry;
 use cosmic::iced::{time, Subscription};
 use cosmic::prelude::*;
+use cosmic::Application;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use config::Config;
+use config::{Config, Scope, Style};
 use indicator::{indicator_state, IndicatorState};
 use usage::UsageSample;
+
+/// Which content the popup surface is showing.
+#[derive(Clone, Copy, PartialEq)]
+enum PopupKind {
+    Info,
+    Settings,
+}
 
 fn main() -> cosmic::iced::Result {
     // Start the applet's event loop with `()` as the application's flags.
@@ -40,6 +50,8 @@ struct Window {
     now: i64,
     /// The open details popup, if any (set while the popup window is shown).
     popup: Option<Id>,
+    /// Which content the open popup renders (info details vs. settings).
+    popup_kind: PopupKind,
 }
 
 /// Messages emitted by the applet.
@@ -51,6 +63,19 @@ pub enum Message {
     TogglePopup,
     /// The popup window was closed by the compositor (e.g. click-away).
     PopupClosed(Id),
+    /// Toggle the settings popup (right-click, or the ⚙ button).
+    ToggleSettings,
+    /// Switch the open popup back to the info view.
+    ShowInfo,
+    /// Settings mutations (each persists config immediately).
+    SetScope(Scope),
+    SetStyle(Style),
+    SetShowPercent(bool),
+    SetShowReset(bool),
+    SetAmber(f32),
+    SetRed(f32),
+    SetStaleAfterMins(u64),
+    SetHistoryPath(String),
 }
 
 impl cosmic::Application for Window {
@@ -88,6 +113,7 @@ impl cosmic::Application for Window {
                 sample,
                 now: unix_now(),
                 popup: None,
+                popup_kind: PopupKind::Info,
             },
             Task::none(),
         )
@@ -108,6 +134,7 @@ impl cosmic::Application for Window {
                 } else if let Some(parent) = self.core.main_window_id() {
                     let new_id = Id::unique();
                     self.popup = Some(new_id);
+                    self.popup_kind = PopupKind::Info;
                     let popup_settings = self.core.applet.get_popup_settings(
                         parent,
                         new_id,
@@ -119,6 +146,83 @@ impl cosmic::Application for Window {
                 } else {
                     Task::none()
                 };
+            }
+            Message::ToggleSettings => {
+                return match self.popup {
+                    // Settings already open: close the popup.
+                    Some(id) if self.popup_kind == PopupKind::Settings => {
+                        self.popup = None;
+                        destroy_popup(id)
+                    }
+                    // Info popup open: switch the same surface to settings.
+                    Some(_) => {
+                        self.popup_kind = PopupKind::Settings;
+                        Task::none()
+                    }
+                    // Closed: open a fresh popup directly in settings mode.
+                    None => {
+                        if let Some(parent) = self.core.main_window_id() {
+                            let new_id = Id::unique();
+                            self.popup = Some(new_id);
+                            self.popup_kind = PopupKind::Settings;
+                            let popup_settings = self.core.applet.get_popup_settings(
+                                parent,
+                                new_id,
+                                None,
+                                None,
+                                None,
+                            );
+                            get_popup(popup_settings)
+                        } else {
+                            Task::none()
+                        }
+                    }
+                };
+            }
+            Message::ShowInfo => {
+                self.popup_kind = PopupKind::Info;
+                return Task::none();
+            }
+            Message::SetScope(scope) => {
+                self.config.scope = scope;
+                self.save_config();
+                return Task::none();
+            }
+            Message::SetStyle(style) => {
+                self.config.style = style;
+                self.save_config();
+                return Task::none();
+            }
+            Message::SetShowPercent(v) => {
+                self.config.show_percent = v;
+                self.save_config();
+                return Task::none();
+            }
+            Message::SetShowReset(v) => {
+                self.config.show_reset = v;
+                self.save_config();
+                return Task::none();
+            }
+            Message::SetAmber(v) => {
+                self.config.thresholds.amber = v.clamp(0.0, 1.0);
+                self.save_config();
+                return Task::none();
+            }
+            Message::SetRed(v) => {
+                self.config.thresholds.red = v.clamp(0.0, 1.0);
+                self.save_config();
+                return Task::none();
+            }
+            Message::SetStaleAfterMins(m) => {
+                self.config.stale_after = m * 60;
+                self.save_config();
+                return Task::none();
+            }
+            Message::SetHistoryPath(s) => {
+                self.config.history_path = if s.trim().is_empty() { None } else { Some(s) };
+                self.sample = usage::read_latest(&self.config.history_path_resolved());
+                self.save_config();
+                return Task::none();
             }
             Message::PopupClosed(id) => {
                 if self.popup == Some(id) {
@@ -148,50 +252,57 @@ impl cosmic::Application for Window {
         let state: IndicatorState =
             indicator_state(self.sample.as_ref(), self.now, &self.config);
         let inner = view::indicator_view(&state, &self.config);
-        // Wrap in a panel-sized press target.
+        // Panel-sized press target. Hover-to-open is driven by the
+        // X-CosmicHoverPopup desktop key (handled by cosmic-panel) — iced
+        // tooltips don't render in an autosize applet surface, so we don't use
+        // one; click and hover both open the popup (view_window/popup_view).
         let button: Element<'_, Self::Message> = self
             .core
             .applet
             .button_from_element(inner, true)
-            .on_press(Message::TogglePopup)
+            // on_press_down (not on_press): cosmic-panel's X-CosmicHoverPopup
+            // synthesizes a press-DOWN on hover; on_press needs a release and
+            // would never fire from hover. Matches the stock applets.
+            .on_press_down(Message::TogglePopup)
             .into();
 
-        match &self.sample {
-            Some(s) => {
-                let tip: Element<'_, Self::Message> = cosmic::widget::tooltip(
-                    button,
-                    cosmic::widget::text(view::tooltip_text(s, self.now)),
-                    cosmic::widget::tooltip::Position::Bottom,
-                )
+        // Right-click anywhere on the indicator opens (or toggles) settings.
+        let target: Element<'_, Self::Message> =
+            cosmic::widget::mouse_area(button)
+                .on_right_press(Message::ToggleSettings)
                 .into();
-                if self.config.show_reset {
-                    // Append the soonest reset countdown beside the indicator.
-                    cosmic::widget::Row::new()
-                        .spacing(4)
-                        .push(tip)
-                        .push(cosmic::widget::text(view::reset_label(s, self.now)).size(12))
-                        .into()
-                } else {
-                    tip
-                }
-            }
-            None => button,
+
+        match &self.sample {
+            // Optionally show the soonest reset countdown beside the indicator.
+            Some(s) if self.config.show_reset => cosmic::widget::Row::new()
+                .spacing(4)
+                .push(target)
+                .push(cosmic::widget::text(view::reset_label(s, self.now)).size(12))
+                .into(),
+            _ => target,
         }
     }
 
-    /// The popup window: the details column, or a placeholder with no data.
+    /// The popup window: info details or the settings panel.
     fn view_window(&self, _id: Id) -> Element<'_, Self::Message> {
-        match &self.sample {
-            Some(s) => self
+        match self.popup_kind {
+            PopupKind::Settings => self
                 .core
                 .applet
-                .popup_container(view::popup_view(s, self.now, &self.config))
+                .popup_container(view::settings_view(&self.config))
                 .into(),
-            None => self
-                .core
-                .applet
-                .popup_container(cosmic::widget::text("No Claude usage data yet").size(14))
-                .into(),
+            PopupKind::Info => match &self.sample {
+                Some(s) => self
+                    .core
+                    .applet
+                    .popup_container(view::popup_view(s, self.now, &self.config))
+                    .into(),
+                None => self
+                    .core
+                    .applet
+                    .popup_container(cosmic::widget::text("No Claude usage data yet").size(14))
+                    .into(),
+            },
         }
     }
 
@@ -202,5 +313,18 @@ impl cosmic::Application for Window {
 
     fn style(&self) -> Option<cosmic::iced::theme::Style> {
         Some(cosmic::applet::style())
+    }
+}
+
+impl Window {
+    /// Persist the current config back to cosmic-config (best-effort; logs on
+    /// failure). Mirrors the stock-applet pattern: open a `Config` handler for
+    /// the app id + schema version, then `write_entry`.
+    fn save_config(&self) {
+        if let Ok(h) = cosmic::cosmic_config::Config::new(Self::APP_ID, config::CONFIG_VERSION) {
+            if let Err(e) = self.config.write_entry(&h) {
+                eprintln!("config write failed: {e:?}");
+            }
+        }
     }
 }
