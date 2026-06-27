@@ -105,17 +105,19 @@ impl cosmic::Application for Window {
                 self.now = unix_now();
                 return if let Some(id) = self.popup.take() {
                     destroy_popup(id)
-                } else {
+                } else if let Some(parent) = self.core.main_window_id() {
                     let new_id = Id::unique();
                     self.popup = Some(new_id);
                     let popup_settings = self.core.applet.get_popup_settings(
-                        self.core.main_window_id().unwrap(),
+                        parent,
                         new_id,
                         None,
                         None,
                         None,
                     );
                     get_popup(popup_settings)
+                } else {
+                    Task::none()
                 };
             }
             Message::PopupClosed(id) => {
