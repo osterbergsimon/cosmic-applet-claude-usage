@@ -43,7 +43,7 @@ first run and whenever a key is unset or unreadable. Keys:
 | scope          | session, weekly, worst, both             | worst       |
 | style          | color-dot, fill-bar, fill-color          | color-dot   |
 | show_percent   | true, false                              | false       |
-| show_reset     | true, false (soonest reset text on bar)  | false       |
+| show_reset     | true, false (soonest reset text by dot)  | false       |
 | thresholds     | { amber, red } fractions                 | 0.50 / 0.80 |
 | stale_after    | seconds                                  | 600         |
 | history_path   | path override (optional)                 | (unset)     |
