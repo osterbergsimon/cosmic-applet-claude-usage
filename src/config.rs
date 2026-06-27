@@ -1,18 +1,25 @@
+use cosmic::cosmic_config::{self, cosmic_config_derive::CosmicConfigEntry, CosmicConfigEntry};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+/// cosmic-config application id; matches the desktop entry / app id.
+pub const CONFIG_ID: &str = "co.osterberg.ClaudeUsage";
+/// cosmic-config schema version.
+pub const CONFIG_VERSION: u64 = 1;
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Scope { Session, Weekly, Worst, Both }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Style { ColorDot, FillBar, FillColor }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Thresholds { pub amber: f32, pub red: f32 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, CosmicConfigEntry)]
+#[version = 1]
 pub struct Config {
     pub scope: Scope,
     pub style: Style,
@@ -38,6 +45,15 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Load persisted config from cosmic-config, falling back to defaults on
+    /// any error (missing config directory, unset keys, parse failures).
+    pub fn load() -> Config {
+        match cosmic_config::Config::new(CONFIG_ID, CONFIG_VERSION) {
+            Ok(handler) => Config::get_entry(&handler).unwrap_or_else(|(_errs, cfg)| cfg),
+            Err(_) => Config::default(),
+        }
+    }
+
     pub fn history_path_resolved(&self) -> PathBuf {
         if let Some(p) = &self.history_path {
             return PathBuf::from(p);

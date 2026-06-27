@@ -78,8 +78,8 @@ impl cosmic::Application for Window {
         core: cosmic::Core,
         _flags: Self::Flags,
     ) -> (Self, Task<cosmic::Action<Self::Message>>) {
-        // cosmic-config loading is Task 9; use defaults for now.
-        let config = Config::default();
+        // Load persisted config from cosmic-config (defaults if absent).
+        let config = Config::load();
         let sample = usage::read_latest(&config.history_path_resolved());
         (
             Window {
