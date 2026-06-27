@@ -1,0 +1,80 @@
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Scope { Session, Weekly, Worst, Both }
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Style { ColorDot, FillBar, FillColor }
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct Thresholds { pub amber: f32, pub red: f32 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Config {
+    pub scope: Scope,
+    pub style: Style,
+    pub show_percent: bool,
+    pub show_reset: bool,
+    pub thresholds: Thresholds,
+    pub stale_after: u64,
+    pub history_path: Option<String>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            scope: Scope::Worst,
+            style: Style::ColorDot,
+            show_percent: false,
+            show_reset: false,
+            thresholds: Thresholds { amber: 0.50, red: 0.80 },
+            stale_after: 600,
+            history_path: None,
+        }
+    }
+}
+
+impl Config {
+    pub fn history_path_resolved(&self) -> PathBuf {
+        if let Some(p) = &self.history_path {
+            return PathBuf::from(p);
+        }
+        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+        home.join(".claude/usage-history.jsonl")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_match_spec() {
+        let c = Config::default();
+        assert!(matches!(c.scope, Scope::Worst));
+        assert!(matches!(c.style, Style::ColorDot));
+        assert_eq!(c.show_percent, false);
+        assert_eq!(c.show_reset, false);
+        assert_eq!(c.thresholds.amber, 0.50);
+        assert_eq!(c.thresholds.red, 0.80);
+        assert_eq!(c.stale_after, 600);
+        assert!(c.history_path.is_none());
+    }
+
+    #[test]
+    fn resolves_default_history_path() {
+        let c = Config::default();
+        let p = c.history_path_resolved();
+        assert!(p.ends_with(".claude/usage-history.jsonl"));
+    }
+
+    #[test]
+    fn resolves_override_history_path() {
+        let mut c = Config::default();
+        c.history_path = Some("/x/y.jsonl".into());
+        assert_eq!(c.history_path_resolved(), std::path::PathBuf::from("/x/y.jsonl"));
+    }
+}
