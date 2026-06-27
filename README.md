@@ -21,7 +21,10 @@ Dev iteration (no sudo, no /usr):
 
     nix develop -c just install-dev   # → ~/.local/bin + ~/.local/share/applications
 
-Permanent install via home-manager (see `~/dotfiles/overlays/claude-usage`):
+Permanent install via home-manager — import `nix/overlay.nix` (in this repo) into
+your dotfiles flake's `nixpkgs.overlays`, add `cosmic-applet-claude-usage` to your
+home packages, fill in the libcosmic `outputHashes` (first build prints the hash),
+then:
 
     sudo nixos-rebuild switch --flake ~/dotfiles#eclipse
 
