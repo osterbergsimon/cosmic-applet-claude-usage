@@ -16,7 +16,7 @@ use cosmic::prelude::*;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use config::{Config, Scope, Style};
+use config::{Config, ResetDisplay, Scope, Style};
 use indicator::{indicator_state, IndicatorState};
 use usage::UsageSample;
 
@@ -70,7 +70,7 @@ pub enum Message {
     SetScope(Scope),
     SetStyle(Style),
     SetShowPercent(bool),
-    SetShowReset(bool),
+    SetResetDisplay(ResetDisplay),
     SetAmber(f32),
     SetRed(f32),
     SetStaleAfterMins(u64),
@@ -197,8 +197,8 @@ impl cosmic::Application for Window {
                 self.save_config();
                 return Task::none();
             }
-            Message::SetShowReset(v) => {
-                self.config.show_reset = v;
+            Message::SetResetDisplay(v) => {
+                self.config.reset_display = v;
                 self.save_config();
                 return Task::none();
             }
@@ -256,18 +256,10 @@ impl cosmic::Application for Window {
     fn view(&self) -> Element<'_, Self::Message> {
         let state: IndicatorState =
             indicator_state(self.sample.as_ref(), self.now, &self.config);
-        let indicator = view::indicator_view(&state, &self.config);
-
-        // Indicator (+ optional reset countdown) form the pressable content.
-        let content: Element<'_, Self::Message> = match &self.sample {
-            Some(s) if self.config.show_reset => cosmic::widget::Row::new()
-                .spacing(6)
-                .align_y(cosmic::iced::Alignment::Center)
-                .push(indicator)
-                .push(cosmic::widget::text(view::reset_label(s, self.now)).size(12))
-                .into(),
-            _ => indicator,
-        };
+        // Reset context (elapsed/remaining) for the soonest budget; indicator_view
+        // renders it per the reset_display mode (text / compact / glow / ring arcs).
+        let reset = self.sample.as_ref().map(|s| view::reset_info(s, self.now));
+        let content = view::indicator_view(&state, &self.config, reset);
 
         // Content-sized button — NOT button_from_element, which forces a fixed
         // symbolic-icon size that clips wider content (fill bars, two

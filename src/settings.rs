@@ -3,9 +3,10 @@
 //! Pure label/index mapping for the settings dropdowns. No libcosmic types so
 //! the mapping can be unit-tested in isolation from the UI.
 
-use crate::config::{Scope, Style};
+use crate::config::{ResetDisplay, Scope, Style};
 
 pub const SCOPE_LABELS: [&str; 4] = ["Session (5h)", "Weekly (7d)", "Worst of both", "Both"];
+pub const RESET_LABELS: [&str; 6] = ["Off", "Text", "Compact", "Glow", "Dual ring", "Track time"];
 pub const STYLE_LABELS: [&str; 5] =
     ["Color dot", "Fill bar", "Fill color", "Ring", "Ring (color)"];
 
@@ -44,6 +45,28 @@ pub fn style_from_index(i: usize) -> Style {
         3 => Style::Ring,
         4 => Style::RingColor,
         _ => Style::ColorDot,
+    }
+}
+
+pub fn reset_index(r: ResetDisplay) -> usize {
+    match r {
+        ResetDisplay::None => 0,
+        ResetDisplay::Text => 1,
+        ResetDisplay::Compact => 2,
+        ResetDisplay::Glow => 3,
+        ResetDisplay::DualRing => 4,
+        ResetDisplay::Track => 5,
+    }
+}
+
+pub fn reset_from_index(i: usize) -> ResetDisplay {
+    match i {
+        1 => ResetDisplay::Text,
+        2 => ResetDisplay::Compact,
+        3 => ResetDisplay::Glow,
+        4 => ResetDisplay::DualRing,
+        5 => ResetDisplay::Track,
+        _ => ResetDisplay::None,
     }
 }
 
@@ -89,8 +112,23 @@ mod tests {
     }
 
     #[test]
+    fn reset_round_trips_every_variant() {
+        for r in [
+            ResetDisplay::None,
+            ResetDisplay::Text,
+            ResetDisplay::Compact,
+            ResetDisplay::Glow,
+            ResetDisplay::DualRing,
+            ResetDisplay::Track,
+        ] {
+            assert_eq!(reset_from_index(reset_index(r)), r);
+        }
+    }
+
+    #[test]
     fn label_array_lengths() {
         assert_eq!(SCOPE_LABELS.len(), 4);
         assert_eq!(STYLE_LABELS.len(), 5);
+        assert_eq!(RESET_LABELS.len(), 6);
     }
 }

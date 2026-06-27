@@ -41,9 +41,9 @@ first run and whenever a key is unset or unreadable. Keys:
 | Key            | Values                                   | Default     |
 |----------------|------------------------------------------|-------------|
 | scope          | session, weekly, worst, both             | worst       |
-| style          | color-dot, fill-bar, fill-color          | color-dot   |
+| style          | color-dot, fill-bar, fill-color, ring, ring-color | color-dot |
 | show_percent   | true, false                              | false       |
-| show_reset     | true, false (soonest reset text by dot)  | false       |
+| reset_display  | none, text, compact, glow, dual-ring, track | none     |
 | thresholds     | { amber, red } fractions                 | 0.50 / 0.80 |
 | stale_after    | seconds                                  | 600         |
 | history_path   | path override (optional)                 | (unset)     |

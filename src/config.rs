@@ -15,6 +15,18 @@ pub enum Scope { Session, Weekly, Worst, Both }
 #[serde(rename_all = "kebab-case")]
 pub enum Style { ColorDot, FillBar, FillColor, Ring, RingColor }
 
+/// How time-to-reset is surfaced on the panel (the popup always shows it).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ResetDisplay {
+    None,
+    Text,
+    Compact,
+    Glow,
+    DualRing,
+    Track,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Thresholds { pub amber: f32, pub red: f32 }
 
@@ -24,7 +36,7 @@ pub struct Config {
     pub scope: Scope,
     pub style: Style,
     pub show_percent: bool,
-    pub show_reset: bool,
+    pub reset_display: ResetDisplay,
     pub thresholds: Thresholds,
     pub stale_after: u64,
     pub history_path: Option<String>,
@@ -36,7 +48,7 @@ impl Default for Config {
             scope: Scope::Worst,
             style: Style::ColorDot,
             show_percent: false,
-            show_reset: false,
+            reset_display: ResetDisplay::None,
             thresholds: Thresholds { amber: 0.50, red: 0.80 },
             stale_after: 600,
             history_path: None,
@@ -73,7 +85,7 @@ mod tests {
         assert!(matches!(c.scope, Scope::Worst));
         assert!(matches!(c.style, Style::ColorDot));
         assert_eq!(c.show_percent, false);
-        assert_eq!(c.show_reset, false);
+        assert!(matches!(c.reset_display, ResetDisplay::None));
         assert_eq!(c.thresholds.amber, 0.50);
         assert_eq!(c.thresholds.red, 0.80);
         assert_eq!(c.stale_after, 600);
