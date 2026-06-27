@@ -3,23 +3,45 @@
 mod config;
 mod indicator;
 mod usage;
+mod view;
 
 use cosmic::iced::Subscription;
 use cosmic::prelude::*;
+
+use config::Config;
+use indicator::{indicator_state, IndicatorState};
+use usage::UsageSample;
 
 fn main() -> cosmic::iced::Result {
     // Start the applet's event loop with `()` as the application's flags.
     cosmic::applet::run::<Window>(())
 }
 
+/// Current unix time in seconds (saturating to 0 on a pre-epoch clock).
+fn unix_now() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 /// The applet model. The COSMIC runtime manages the `core`.
 struct Window {
     core: cosmic::Core,
+    config: Config,
+    sample: Option<UsageSample>,
+    now: i64,
 }
 
-/// Messages emitted by the applet. None yet — the static placeholder is inert.
+/// Messages emitted by the applet.
 #[derive(Debug, Clone)]
-enum Message {}
+pub enum Message {
+    /// Re-read the usage history file (wired to a watcher in Task 6).
+    Reload,
+    /// Toggle the details popup (implemented in Task 8).
+    TogglePopup,
+}
 
 impl cosmic::Application for Window {
     /// The async executor used to run the application's commands.
@@ -46,22 +68,46 @@ impl cosmic::Application for Window {
         core: cosmic::Core,
         _flags: Self::Flags,
     ) -> (Self, Task<cosmic::Action<Self::Message>>) {
-        (Window { core }, Task::none())
+        // cosmic-config loading is Task 9; use defaults for now.
+        let config = Config::default();
+        let sample = usage::read_latest(&config.history_path_resolved());
+        (
+            Window {
+                core,
+                config,
+                sample,
+                now: unix_now(),
+            },
+            Task::none(),
+        )
     }
 
-    fn update(&mut self, _message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
+    fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
+        match message {
+            Message::Reload => {
+                self.sample = usage::read_latest(&self.config.history_path_resolved());
+                self.now = unix_now();
+            }
+            Message::TogglePopup => {}
+        }
         Task::none()
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
+        // A file watcher is wired in here in Task 6.
         Subscription::none()
     }
 
-    /// The applet's button in the panel is drawn here. Static placeholder for now.
+    /// The applet's button in the panel renders the real indicator.
     fn view(&self) -> Element<'_, Self::Message> {
+        let state: IndicatorState =
+            indicator_state(self.sample.as_ref(), self.now, &self.config);
+        let inner = view::indicator_view(&state, &self.config);
+        // Wrap in a panel-sized press target.
         self.core
             .applet
-            .icon_button("display-symbolic")
+            .button_from_element(inner, true)
+            .on_press(Message::TogglePopup)
             .into()
     }
 
