@@ -2,6 +2,7 @@
 
 use crate::config::{Config, Style};
 use crate::indicator::{Gauge, IndicatorState, Level};
+use crate::usage::{format_countdown, UsageSample};
 use cosmic::iced::{Border, Color, Length};
 use cosmic::widget;
 use cosmic::Element;
@@ -124,4 +125,88 @@ pub fn indicator_view<'a>(state: &IndicatorState, cfg: &Config) -> Element<'a, M
         row = row.push(el);
     }
     row.into()
+}
+
+/// One-line hover summary: `Session X% (resets in …) · Weekly Y% (resets in …)`.
+pub fn tooltip_text(sample: &UsageSample, now: i64) -> String {
+    format!(
+        "Session {}% (resets in {}) · Weekly {}% (resets in {})",
+        (sample.session * 100.0).round() as i64,
+        format_countdown(sample.session_reset - now),
+        (sample.weekly * 100.0).round() as i64,
+        format_countdown(sample.weekly_reset - now),
+    )
+}
+
+/// Soonest upcoming reset across both budgets, as "resets in X" — used for the
+/// optional reset text beside the indicator when `show_reset` is enabled.
+pub fn reset_label(sample: &UsageSample, now: i64) -> String {
+    let soonest = sample.session_reset.min(sample.weekly_reset) - now;
+    format!("resets in {}", format_countdown(soonest))
+}
+
+/// A single budget block for the popup: name + percent, then a reset countdown.
+fn budget_row<'a>(name: &str, value: f32, reset: i64, now: i64) -> Element<'a, Message> {
+    let pct = (value * 100.0).round() as i64;
+    let countdown = format_countdown(reset - now);
+    widget::Column::new()
+        .spacing(2)
+        .push(widget::text(format!("{name}: {pct}%")).size(14))
+        .push(widget::text(format!("resets in {countdown}")).size(11))
+        .into()
+}
+
+/// The click popup contents: both budgets with percent and reset countdowns.
+pub fn popup_view<'a>(sample: &UsageSample, now: i64, _cfg: &Config) -> Element<'a, Message> {
+    widget::Column::new()
+        .spacing(12)
+        .padding(12)
+        .push(budget_row(
+            "Session (5h)",
+            sample.session,
+            sample.session_reset,
+            now,
+        ))
+        .push(budget_row(
+            "Weekly (7d)",
+            sample.weekly,
+            sample.weekly_reset,
+            now,
+        ))
+        .into()
+}
+
+#[cfg(test)]
+mod ttests {
+    use super::*;
+    use crate::usage::UsageSample;
+
+    #[test]
+    fn tooltip_renders_both_with_resets() {
+        let now = 2000;
+        let s = UsageSample {
+            session: 0.38,
+            weekly: 0.12,
+            session_reset: now + 60 * 60 * 2 + 60 * 14, // 2h 14m
+            weekly_reset: now + 60 * 60 * 24 * 4 + 60 * 60 * 3, // 4d 3h
+            ts: 0,
+        };
+        assert_eq!(
+            tooltip_text(&s, now),
+            "Session 38% (resets in 2h 14m) · Weekly 12% (resets in 4d 3h)"
+        );
+    }
+
+    #[test]
+    fn reset_label_uses_soonest() {
+        let now = 2000;
+        let s = UsageSample {
+            session: 0.0,
+            weekly: 0.0,
+            session_reset: now + 60 * 45, // 45m (soonest)
+            weekly_reset: now + 60 * 60 * 24 * 4, // 4d
+            ts: 0,
+        };
+        assert_eq!(reset_label(&s, now), "resets in 45m");
+    }
 }

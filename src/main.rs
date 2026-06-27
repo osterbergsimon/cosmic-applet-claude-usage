@@ -7,6 +7,8 @@ mod usage;
 mod view;
 mod watch;
 
+use cosmic::iced::platform_specific::shell::wayland::commands::popup::{destroy_popup, get_popup};
+use cosmic::iced::window::Id;
 use cosmic::iced::{time, Subscription};
 use cosmic::prelude::*;
 use std::path::PathBuf;
@@ -36,6 +38,8 @@ struct Window {
     config: Config,
     sample: Option<UsageSample>,
     now: i64,
+    /// The open details popup, if any (set while the popup window is shown).
+    popup: Option<Id>,
 }
 
 /// Messages emitted by the applet.
@@ -45,6 +49,8 @@ pub enum Message {
     Reload,
     /// Toggle the details popup (implemented in Task 8).
     TogglePopup,
+    /// The popup window was closed by the compositor (e.g. click-away).
+    PopupClosed(Id),
 }
 
 impl cosmic::Application for Window {
@@ -81,6 +87,7 @@ impl cosmic::Application for Window {
                 config,
                 sample,
                 now: unix_now(),
+                popup: None,
             },
             Task::none(),
         )
@@ -92,7 +99,30 @@ impl cosmic::Application for Window {
                 self.sample = usage::read_latest(&self.config.history_path_resolved());
                 self.now = unix_now();
             }
-            Message::TogglePopup => {}
+            Message::TogglePopup => {
+                // Refresh data/clock when opening so the popup is current.
+                self.sample = usage::read_latest(&self.config.history_path_resolved());
+                self.now = unix_now();
+                return if let Some(id) = self.popup.take() {
+                    destroy_popup(id)
+                } else {
+                    let new_id = Id::unique();
+                    self.popup = Some(new_id);
+                    let popup_settings = self.core.applet.get_popup_settings(
+                        self.core.main_window_id().unwrap(),
+                        new_id,
+                        None,
+                        None,
+                        None,
+                    );
+                    get_popup(popup_settings)
+                };
+            }
+            Message::PopupClosed(id) => {
+                if self.popup == Some(id) {
+                    self.popup = None;
+                }
+            }
         }
         Task::none()
     }
@@ -110,17 +140,62 @@ impl cosmic::Application for Window {
         Subscription::batch([file, tick])
     }
 
-    /// The applet's button in the panel renders the real indicator.
+    /// The applet's button in the panel renders the real indicator. Hovering
+    /// shows a tooltip; clicking toggles the details popup.
     fn view(&self) -> Element<'_, Self::Message> {
         let state: IndicatorState =
             indicator_state(self.sample.as_ref(), self.now, &self.config);
         let inner = view::indicator_view(&state, &self.config);
         // Wrap in a panel-sized press target.
-        self.core
+        let button: Element<'_, Self::Message> = self
+            .core
             .applet
             .button_from_element(inner, true)
             .on_press(Message::TogglePopup)
-            .into()
+            .into();
+
+        match &self.sample {
+            Some(s) => {
+                let tip: Element<'_, Self::Message> = cosmic::widget::tooltip(
+                    button,
+                    cosmic::widget::text(view::tooltip_text(s, self.now)),
+                    cosmic::widget::tooltip::Position::Bottom,
+                )
+                .into();
+                if self.config.show_reset {
+                    // Append the soonest reset countdown beside the indicator.
+                    cosmic::widget::Row::new()
+                        .spacing(4)
+                        .push(tip)
+                        .push(cosmic::widget::text(view::reset_label(s, self.now)).size(12))
+                        .into()
+                } else {
+                    tip
+                }
+            }
+            None => button,
+        }
+    }
+
+    /// The popup window: the details column, or a placeholder with no data.
+    fn view_window(&self, _id: Id) -> Element<'_, Self::Message> {
+        match &self.sample {
+            Some(s) => self
+                .core
+                .applet
+                .popup_container(view::popup_view(s, self.now, &self.config))
+                .into(),
+            None => self
+                .core
+                .applet
+                .popup_container(cosmic::widget::text("No Claude usage data yet").size(14))
+                .into(),
+        }
+    }
+
+    /// Notified when the compositor closes the popup (e.g. click-away).
+    fn on_close_requested(&self, id: Id) -> Option<Message> {
+        Some(Message::PopupClosed(id))
     }
 
     fn style(&self) -> Option<cosmic::iced::theme::Style> {
