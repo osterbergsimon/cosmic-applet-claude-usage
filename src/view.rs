@@ -19,6 +19,23 @@ fn color(level: Level) -> Color {
     }
 }
 
+/// Neutral accent used by the non-color fill/ring styles.
+const ACCENT: Color = Color {
+    r: 0.45,
+    g: 0.65,
+    b: 0.95,
+    a: 1.0,
+};
+
+fn hex(c: Color) -> String {
+    format!(
+        "#{:02x}{:02x}{:02x}",
+        (c.r * 255.0).round() as u8,
+        (c.g * 255.0).round() as u8,
+        (c.b * 255.0).round() as u8,
+    )
+}
+
 /// A small filled circle, built from a fixed-size container with a rounded
 /// background — the simplest portable primitive across libcosmic revs.
 fn swatch<'a>(c: Color) -> Element<'a, Message> {
@@ -107,6 +124,46 @@ fn bar<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
     }
 }
 
+/// A circular progress ring — a "rolled-up" bar drawn as an inline SVG whose
+/// foreground arc length is `value` of the circumference (via stroke-dasharray).
+fn ring<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
+    use std::f32::consts::PI;
+    let size = 16.0_f32;
+    let sw = 2.5_f32; // stroke width
+    let c = size / 2.0;
+    let r = (size - sw) / 2.0; // keep the stroke inside the viewBox
+    let circ = 2.0 * PI * r;
+    let filled = g.value.clamp(0.0, 1.0) * circ;
+    let fg = match cfg.style {
+        Style::RingColor => color(g.level),
+        _ => ACCENT,
+    };
+    let alpha = if dim { 0.45 } else { 1.0 };
+
+    // Background track ring + foreground arc starting at 12 o'clock (rotate -90).
+    let doc = format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}">
+<circle cx="{c}" cy="{c}" r="{r:.3}" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="{sw}"/>
+<circle cx="{c}" cy="{c}" r="{r:.3}" fill="none" stroke="{stroke}" stroke-opacity="{alpha:.2}" stroke-width="{sw}" stroke-linecap="round" stroke-dasharray="{filled:.3} {circ:.3}" transform="rotate(-90 {c} {c})"/>
+</svg>"##,
+        stroke = hex(fg),
+    );
+    let ring_el = widget::svg(widget::svg::Handle::from_memory(doc.into_bytes()))
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size));
+
+    if cfg.show_percent {
+        widget::Row::new()
+            .spacing(4)
+            .align_y(Alignment::Center)
+            .push(ring_el)
+            .push(widget::text(g.label.clone()).size(12))
+            .into()
+    } else {
+        ring_el.into()
+    }
+}
+
 pub fn indicator_view<'a>(state: &IndicatorState, cfg: &Config) -> Element<'a, Message> {
     let (gauges, dim): (&[Gauge], bool) = match state {
         IndicatorState::NoData => {
@@ -122,7 +179,8 @@ pub fn indicator_view<'a>(state: &IndicatorState, cfg: &Config) -> Element<'a, M
     for g in gauges {
         let el = match cfg.style {
             Style::ColorDot => dot(g, cfg, dim),
-            _ => bar(g, cfg, dim),
+            Style::FillBar | Style::FillColor => bar(g, cfg, dim),
+            Style::Ring | Style::RingColor => ring(g, cfg, dim),
         };
         row = row.push(el);
     }

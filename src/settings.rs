@@ -6,7 +6,8 @@
 use crate::config::{Scope, Style};
 
 pub const SCOPE_LABELS: [&str; 4] = ["Session (5h)", "Weekly (7d)", "Worst of both", "Both"];
-pub const STYLE_LABELS: [&str; 3] = ["Color dot", "Fill bar", "Fill color"];
+pub const STYLE_LABELS: [&str; 5] =
+    ["Color dot", "Fill bar", "Fill color", "Ring", "Ring (color)"];
 
 pub fn scope_index(s: Scope) -> usize {
     match s {
@@ -31,6 +32,8 @@ pub fn style_index(s: Style) -> usize {
         Style::ColorDot => 0,
         Style::FillBar => 1,
         Style::FillColor => 2,
+        Style::Ring => 3,
+        Style::RingColor => 4,
     }
 }
 
@@ -38,6 +41,8 @@ pub fn style_from_index(i: usize) -> Style {
     match i {
         1 => Style::FillBar,
         2 => Style::FillColor,
+        3 => Style::Ring,
+        4 => Style::RingColor,
         _ => Style::ColorDot,
     }
 }
@@ -55,7 +60,13 @@ mod tests {
 
     #[test]
     fn style_round_trips_every_variant() {
-        for s in [Style::ColorDot, Style::FillBar, Style::FillColor] {
+        for s in [
+            Style::ColorDot,
+            Style::FillBar,
+            Style::FillColor,
+            Style::Ring,
+            Style::RingColor,
+        ] {
             assert_eq!(style_from_index(style_index(s)), s);
         }
     }
@@ -73,11 +84,13 @@ mod tests {
         assert_eq!(style_index(Style::ColorDot), 0);
         assert_eq!(style_index(Style::FillBar), 1);
         assert_eq!(style_index(Style::FillColor), 2);
+        assert_eq!(style_index(Style::Ring), 3);
+        assert_eq!(style_index(Style::RingColor), 4);
     }
 
     #[test]
     fn label_array_lengths() {
         assert_eq!(SCOPE_LABELS.len(), 4);
-        assert_eq!(STYLE_LABELS.len(), 3);
+        assert_eq!(STYLE_LABELS.len(), 5);
     }
 }
