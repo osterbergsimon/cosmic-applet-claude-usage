@@ -367,6 +367,34 @@ pub fn popup_view<'a>(sample: &UsageSample, now: i64, _cfg: &Config) -> Element<
         .into()
 }
 
+/// A live preview of the indicator using fixed demo data (65% usage, ~18 min to
+/// reset, ~60% of the window elapsed) so every style + reset-display combination
+/// is visible regardless of the user's real usage. Reflects the current config.
+fn settings_preview<'a>(cfg: &Config) -> Element<'a, Message> {
+    use crate::indicator::{level_for, Gauge, IndicatorState};
+    let g = |v: f32, label: &str| Gauge {
+        value: v,
+        level: level_for(v, &cfg.thresholds),
+        label: label.to_string(),
+    };
+    let gauges = match cfg.scope {
+        crate::config::Scope::Both => vec![g(0.65, "65%"), g(0.30, "30%")],
+        _ => vec![g(0.65, "65%")],
+    };
+    let demo_reset = ResetInfo {
+        // Decoupled on purpose: a clearly-partial time arc AND within glow range.
+        elapsed: 0.62,
+        remaining: 18 * 60,
+    };
+    let preview = indicator_view(&IndicatorState::Live(gauges), cfg, Some(demo_reset));
+    widget::Row::new()
+        .spacing(8)
+        .align_y(Alignment::Center)
+        .push(widget::text("Preview").size(12))
+        .push(preview)
+        .into()
+}
+
 /// The settings panel: dropdowns/toggles/sliders bound to config fields. Each
 /// control emits a `Set*` message which mutates and persists the config.
 pub fn settings_view<'a>(cfg: &Config) -> Element<'a, Message> {
@@ -396,6 +424,7 @@ pub fn settings_view<'a>(cfg: &Config) -> Element<'a, Message> {
         .spacing(8)
         .padding(12)
         .push(widget::text("Settings").size(16))
+        .push(settings_preview(cfg))
         .push(widget::text("Scope").size(12))
         .push(scope)
         .push(widget::text("Style").size(12))
