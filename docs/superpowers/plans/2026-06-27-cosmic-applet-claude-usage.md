@@ -12,7 +12,7 @@
 
 - Data source: last line of `~/.claude/usage-history.jsonl` (override via config `history_path`). Line shape: `{"ts": f64, "session": f64, "weekly": f64, "session_reset": i64, "weekly_reset": i64}`.
 - `session`/`weekly` are fractions in `[0.0, 1.0]`. `worst = max(session, weekly)`.
-- Default config: `scope=worst`, `style=color-dot`, `show_percent=false`, thresholds `amber=0.50 red=0.80`, `stale_after=600s`.
+- Default config: `scope=worst`, `style=color-dot`, `show_percent=false`, `show_reset=false`, thresholds `amber=0.50 red=0.80`, `stale_after=600s`.
 - Color mapping: `value < amber` → green; `amber ≤ value < red` → amber; `value ≥ red` → red.
 - libcosmic depends on a relatively recent stable Rust. Pin the libcosmic git rev in `Cargo.toml` and do not float it.
 - TDD for all pure logic. Frequent commits. No `unwrap()` on I/O paths — degrade to a no-data state instead.
@@ -235,7 +235,7 @@ git commit -m "feat: scaffold libcosmic applet with static panel indicator"
   - `enum Scope { Session, Weekly, Worst, Both }`
   - `enum Style { ColorDot, FillBar, FillColor }`
   - `struct Thresholds { amber: f32, red: f32 }`
-  - `struct Config { scope: Scope, style: Style, show_percent: bool, thresholds: Thresholds, stale_after: u64, history_path: Option<String> }`
+  - `struct Config { scope: Scope, style: Style, show_percent: bool, show_reset: bool, thresholds: Thresholds, stale_after: u64, history_path: Option<String> }`
   - `Config::default()`, `Config::history_path_resolved(&self) -> PathBuf`
 
 - [ ] **Step 1: Write failing tests**
@@ -251,6 +251,7 @@ mod tests {
         assert!(matches!(c.scope, Scope::Worst));
         assert!(matches!(c.style, Style::ColorDot));
         assert_eq!(c.show_percent, false);
+        assert_eq!(c.show_reset, false);
         assert_eq!(c.thresholds.amber, 0.50);
         assert_eq!(c.thresholds.red, 0.80);
         assert_eq!(c.stale_after, 600);
@@ -300,6 +301,7 @@ pub struct Config {
     pub scope: Scope,
     pub style: Style,
     pub show_percent: bool,
+    pub show_reset: bool,
     pub thresholds: Thresholds,
     pub stale_after: u64,
     pub history_path: Option<String>,
@@ -311,6 +313,7 @@ impl Default for Config {
             scope: Scope::Worst,
             style: Style::ColorDot,
             show_percent: false,
+            show_reset: false,
             thresholds: Thresholds { amber: 0.50, red: 0.80 },
             stale_after: 600,
             history_path: None,
@@ -1149,7 +1152,7 @@ git commit -m "feat: fill-bar and fill-color indicator styles"
 
 **Interfaces:**
 - Consumes: `usage::{format_countdown}`, `indicator::gauges`
-- Produces: `fn popup_view<'a>(sample: &UsageSample, now: i64, cfg: &Config) -> Element<'a, Message>`; `fn tooltip_text(sample: &UsageSample) -> String`
+- Produces: `fn popup_view<'a>(sample: &UsageSample, now: i64, cfg: &Config) -> Element<'a, Message>`; `fn tooltip_text(sample: &UsageSample, now: i64) -> String`; `fn reset_label(sample: &UsageSample, now: i64) -> String`
 
 - [ ] **Step 1: Add a tooltip-text test**
 
@@ -1160,9 +1163,30 @@ mod ttests {
     use super::*;
     use crate::usage::UsageSample;
     #[test]
-    fn tooltip_renders_both() {
-        let s = UsageSample { session: 0.38, weekly: 0.12, session_reset: 0, weekly_reset: 0, ts: 0 };
-        assert_eq!(tooltip_text(&s), "Session 38% · Weekly 12%");
+    fn tooltip_renders_both_with_resets() {
+        let now = 2000;
+        let s = UsageSample {
+            session: 0.38, weekly: 0.12,
+            session_reset: now + 60 * 60 * 2 + 60 * 14,      // 2h 14m
+            weekly_reset: now + 60 * 60 * 24 * 4 + 60 * 60 * 3, // 4d 3h
+            ts: 0,
+        };
+        assert_eq!(
+            tooltip_text(&s, now),
+            "Session 38% (resets in 2h 14m) · Weekly 12% (resets in 4d 3h)"
+        );
+    }
+
+    #[test]
+    fn reset_label_uses_soonest() {
+        let now = 2000;
+        let s = UsageSample {
+            session: 0.0, weekly: 0.0,
+            session_reset: now + 60 * 45,                     // 45m (soonest)
+            weekly_reset: now + 60 * 60 * 24 * 4,             // 4d
+            ts: 0,
+        };
+        assert_eq!(reset_label(&s, now), "resets in 45m");
     }
 }
 ```
@@ -1172,12 +1196,21 @@ mod ttests {
 ```rust
 use crate::usage::{format_countdown, UsageSample};
 
-pub fn tooltip_text(sample: &UsageSample) -> String {
+pub fn tooltip_text(sample: &UsageSample, now: i64) -> String {
     format!(
-        "Session {}% · Weekly {}%",
+        "Session {}% (resets in {}) · Weekly {}% (resets in {})",
         (sample.session * 100.0).round() as i64,
+        format_countdown(sample.session_reset - now),
         (sample.weekly * 100.0).round() as i64,
+        format_countdown(sample.weekly_reset - now),
     )
+}
+
+/// Soonest upcoming reset across both budgets, as "resets in X" — used for the
+/// optional bar text when `show_reset` is enabled.
+pub fn reset_label(sample: &UsageSample, now: i64) -> String {
+    let soonest = sample.session_reset.min(sample.weekly_reset) - now;
+    format!("resets in {}", format_countdown(soonest))
 }
 
 fn budget_row<'a>(name: &str, value: f32, reset: i64, now: i64) -> Element<'a, Message> {
@@ -1261,11 +1294,23 @@ fn view(&self) -> Element<Message> {
     let inner = view::indicator_view(&state, &self.config);
     let button = self.core.applet.applet_button(inner, Message::TogglePopup);
     match &self.sample {
-        Some(s) => cosmic::widget::tooltip(
-            button,
-            cosmic::widget::text(view::tooltip_text(s)),
-            cosmic::widget::tooltip::Position::Bottom,
-        ).into(),
+        Some(s) => {
+            let tip: Element<Message> = cosmic::widget::tooltip(
+                button,
+                cosmic::widget::text(view::tooltip_text(s, self.now)),
+                cosmic::widget::tooltip::Position::Bottom,
+            ).into();
+            if self.config.show_reset {
+                // Append the soonest reset countdown beside the indicator.
+                cosmic::widget::row()
+                    .spacing(4)
+                    .push(tip)
+                    .push(cosmic::widget::text(view::reset_label(s, self.now)).size(12))
+                    .into()
+            } else {
+                tip
+            }
+        }
         None => button,
     }
 }
@@ -1369,6 +1414,7 @@ Stored via cosmic-config (`co.osterberg.ClaudeUsage` v1). Keys:
 | scope          | session, weekly, worst, both             | worst       |
 | style          | color-dot, fill-bar, fill-color          | color-dot   |
 | show_percent   | true, false                              | false       |
+| show_reset     | true, false (soonest reset text on bar)  | false       |
 | thresholds     | { amber, red } fractions                 | 0.50 / 0.80 |
 | stale_after    | seconds                                  | 600         |
 | history_path   | path override (optional)                 | (unset)     |
