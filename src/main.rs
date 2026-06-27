@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 mod config;
+mod usage;
 
 use cosmic::iced::Subscription;
 use cosmic::prelude::*;
