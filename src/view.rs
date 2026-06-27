@@ -3,7 +3,7 @@
 use crate::config::{Config, Style};
 use crate::indicator::{Gauge, IndicatorState, Level};
 use crate::usage::{format_countdown, UsageSample};
-use cosmic::iced::{Border, Color, Length};
+use cosmic::iced::{Alignment, Border, Color, Length};
 use cosmic::widget;
 use cosmic::Element;
 
@@ -47,6 +47,7 @@ fn dot<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
     if cfg.show_percent {
         widget::Row::new()
             .spacing(4)
+            .align_y(Alignment::Center)
             .push(circle)
             .push(widget::text(g.label.clone()).size(12))
             .into()
@@ -97,6 +98,7 @@ fn bar<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
     if cfg.show_percent {
         widget::Row::new()
             .spacing(4)
+            .align_y(Alignment::Center)
             .push(track)
             .push(widget::text(g.label.clone()).size(12))
             .into()
@@ -163,7 +165,12 @@ pub fn popup_view<'a>(sample: &UsageSample, now: i64, _cfg: &Config) -> Element<
             sample.weekly_reset,
             now,
         ))
-        .push(widget::button::text("⚙ Settings").on_press(Message::ToggleSettings))
+        // Small, low-prominence settings link (button::text renders too large/heavy).
+        .push(
+            widget::button::custom(widget::text("⚙ Settings").size(11))
+                .class(cosmic::theme::Button::Text)
+                .on_press(Message::ToggleSettings),
+        )
         .into()
 }
 
@@ -213,9 +220,11 @@ pub fn settings_view<'a>(cfg: &Config) -> Element<'a, Message> {
                 .text_size(14),
         )
         .push(widget::text(format!("Amber threshold: {amber_pct}%")).size(12))
-        .push(widget::slider(0.0..=1.0, cfg.thresholds.amber, Message::SetAmber))
+        // step 0.01: the slider's default step is 1.0, which on a 0..=1 range
+        // would only allow 0% or 100%.
+        .push(widget::slider(0.0..=1.0, cfg.thresholds.amber, Message::SetAmber).step(0.01_f32))
         .push(widget::text(format!("Red threshold: {red_pct}%")).size(12))
-        .push(widget::slider(0.0..=1.0, cfg.thresholds.red, Message::SetRed))
+        .push(widget::slider(0.0..=1.0, cfg.thresholds.red, Message::SetRed).step(0.01_f32))
         .push(widget::text(format!("Stale after: {stale_mins} min")).size(12))
         .push(widget::slider(1..=30u32, stale_mins, |v| {
             Message::SetStaleAfterMins(v as u64)

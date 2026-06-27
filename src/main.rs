@@ -256,36 +256,30 @@ impl cosmic::Application for Window {
     fn view(&self) -> Element<'_, Self::Message> {
         let state: IndicatorState =
             indicator_state(self.sample.as_ref(), self.now, &self.config);
-        let inner = view::indicator_view(&state, &self.config);
-        // Panel-sized press target. Hover-to-open is driven by the
-        // X-CosmicHoverPopup desktop key (handled by cosmic-panel) — iced
-        // tooltips don't render in an autosize applet surface, so we don't use
-        // one; click and hover both open the popup (view_window/popup_view).
-        let button: Element<'_, Self::Message> = self
-            .core
-            .applet
-            .button_from_element(inner, true)
-            // on_press_down (not on_press): cosmic-panel's X-CosmicHoverPopup
-            // synthesizes a press-DOWN on hover; on_press needs a release and
-            // would never fire from hover. Matches the stock applets.
-            .on_press_down(Message::TogglePopup)
-            .into();
+        let indicator = view::indicator_view(&state, &self.config);
 
-        // Right-click anywhere on the indicator opens (or toggles) settings.
-        let target: Element<'_, Self::Message> =
-            cosmic::widget::mouse_area(button)
-                .on_right_press(Message::ToggleSettings)
-                .into();
-
-        match &self.sample {
-            // Optionally show the soonest reset countdown beside the indicator.
+        // Indicator (+ optional reset countdown) form the pressable content.
+        let content: Element<'_, Self::Message> = match &self.sample {
             Some(s) if self.config.show_reset => cosmic::widget::Row::new()
-                .spacing(4)
-                .push(target)
+                .spacing(6)
+                .align_y(cosmic::iced::Alignment::Center)
+                .push(indicator)
                 .push(cosmic::widget::text(view::reset_label(s, self.now)).size(12))
                 .into(),
-            _ => target,
-        }
+            _ => indicator,
+        };
+
+        // Content-sized button — NOT button_from_element, which forces a fixed
+        // symbolic-icon size that clips wider content (fill bars, two
+        // percentages). on_press_down so cosmic-panel's hover-synthesized
+        // press-down opens the popup; right-click opens settings.
+        let button = cosmic::widget::button::custom(content)
+            .on_press_down(Message::TogglePopup)
+            .class(cosmic::theme::Button::AppletIcon);
+        let target = cosmic::widget::mouse_area(button).on_right_press(Message::ToggleSettings);
+
+        // autosize_window lets the panel surface grow to fit the content width.
+        self.core.applet.autosize_window(target).into()
     }
 
     /// The popup window: info details or the settings panel.
