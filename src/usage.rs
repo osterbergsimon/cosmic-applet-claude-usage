@@ -6,7 +6,10 @@ use std::path::Path;
 pub struct UsageSample {
     pub session: f32,
     pub weekly: f32,
+    // reset timestamps are consumed by the Task 8 tooltip/popup countdowns.
+    #[allow(dead_code)]
     pub session_reset: i64,
+    #[allow(dead_code)]
     pub weekly_reset: i64,
     pub ts: i64,
 }
