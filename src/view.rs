@@ -42,15 +42,7 @@ fn dot<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
     if dim {
         c.a = 0.45;
     }
-    // FillBar/FillColor partial-fill rendering is refined in Task 7's polish.
-    // For now every style draws a solid colored dot.
-    let _fill = match cfg.style {
-        Style::ColorDot => 1.0,
-        Style::FillBar | Style::FillColor => g.value.clamp(0.0, 1.0),
-    };
-
     let circle = swatch(c);
-
     if cfg.show_percent {
         widget::Row::new()
             .spacing(4)
@@ -59,6 +51,56 @@ fn dot<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
             .into()
     } else {
         circle
+    }
+}
+
+fn bar<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
+    let full = 40.0_f32;
+    let height = 6.0_f32;
+    let filled = crate::fill::fill_width(g.value, full);
+
+    // FillColor uses the level color; FillBar uses a neutral accent.
+    let mut fill_color = match cfg.style {
+        Style::FillColor => color(g.level),
+        _ => Color::from_rgb(0.45, 0.65, 0.95),
+    };
+    if dim {
+        fill_color.a = 0.45;
+    }
+
+    let track = widget::container(
+        widget::container(
+            widget::Space::new()
+                .width(Length::Fixed(filled))
+                .height(Length::Fixed(height)),
+        )
+        .style(move |_t| widget::container::Style {
+            background: Some(fill_color.into()),
+            border: Border {
+                radius: (height / 2.0).into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    )
+    .width(Length::Fixed(full))
+    .style(move |_t| widget::container::Style {
+        background: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.15).into()),
+        border: Border {
+            radius: (height / 2.0).into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+
+    if cfg.show_percent {
+        widget::Row::new()
+            .spacing(4)
+            .push(track)
+            .push(widget::text(g.label.clone()).size(12))
+            .into()
+    } else {
+        track.into()
     }
 }
 
@@ -75,7 +117,11 @@ pub fn indicator_view<'a>(state: &IndicatorState, cfg: &Config) -> Element<'a, M
 
     let mut row = widget::Row::new().spacing(6);
     for g in gauges {
-        row = row.push(dot(g, cfg, dim));
+        let el = match cfg.style {
+            Style::ColorDot => dot(g, cfg, dim),
+            _ => bar(g, cfg, dim),
+        };
+        row = row.push(el);
     }
     row.into()
 }
