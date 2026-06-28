@@ -264,7 +264,10 @@ impl cosmic::Application for Window {
             indicator_state(self.sample.as_ref(), self.now, &self.config);
         // Reset context (elapsed/remaining) for the soonest budget; indicator_view
         // renders it per the reset_display mode (text / compact / glow / ring arcs).
-        let reset = self.sample.as_ref().map(|s| view::reset_info(s, self.now));
+        let reset = self
+            .sample
+            .as_ref()
+            .map(|s| view::reset_info(s, self.now, self.config.scope));
         let content = view::indicator_view(&state, &self.config, reset);
 
         // Content-sized button — NOT button_from_element, which forces a fixed

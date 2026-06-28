@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use crate::config::{Config, ResetDisplay, Style, Thresholds};
+use crate::config::{Config, ResetDisplay, Scope, Style, Thresholds};
 use crate::indicator::{level_for, Gauge, IndicatorState, Level};
 use crate::usage::{format_countdown, UsageSample};
 use cosmic::iced::{Alignment, Background, Border, Color, Length};
@@ -137,11 +137,30 @@ pub struct ResetInfo {
 const SESSION_WINDOW: i64 = 5 * 3600;
 const WEEKLY_WINDOW: i64 = 7 * 24 * 3600;
 
-pub fn reset_info(sample: &UsageSample, now: i64) -> ResetInfo {
-    let (reset, window) = if sample.session_reset <= sample.weekly_reset {
-        (sample.session_reset, SESSION_WINDOW)
-    } else {
-        (sample.weekly_reset, WEEKLY_WINDOW)
+/// The reset context for the budget the indicator is *showing*, so the
+/// countdown matches the gauge: Session → session window, Weekly → weekly,
+/// Worst → whichever budget is currently higher (the one drawn). Both shows two
+/// gauges, so it surfaces the soonest of the pair.
+pub fn reset_info(sample: &UsageSample, now: i64, scope: Scope) -> ResetInfo {
+    let session = (sample.session_reset, SESSION_WINDOW);
+    let weekly = (sample.weekly_reset, WEEKLY_WINDOW);
+    let (reset, window) = match scope {
+        Scope::Session => session,
+        Scope::Weekly => weekly,
+        Scope::Worst => {
+            if sample.session >= sample.weekly {
+                session
+            } else {
+                weekly
+            }
+        }
+        Scope::Both => {
+            if sample.session_reset <= sample.weekly_reset {
+                session
+            } else {
+                weekly
+            }
+        }
     };
     let remaining = (reset - now).max(0);
     let elapsed = (1.0 - remaining as f32 / window as f32).clamp(0.0, 1.0);
@@ -638,21 +657,43 @@ mod ttests {
     use super::*;
     use crate::usage::UsageSample;
 
-    #[test]
-    fn reset_info_uses_soonest_budget_window() {
-        let now = 2000;
-        // session resets sooner (45m) → uses the 5h window.
-        let s = UsageSample {
-            session: 0.0,
-            weekly: 0.0,
+    /// Sample where the session resets much sooner than the weekly.
+    fn split_sample(now: i64, session: f32, weekly: f32) -> UsageSample {
+        UsageSample {
+            session,
+            weekly,
             session_reset: now + 60 * 45,
             weekly_reset: now + 60 * 60 * 24 * 4,
             ts: 0,
-        };
-        let ri = reset_info(&s, now);
+        }
+    }
+
+    #[test]
+    fn reset_info_both_uses_soonest_window() {
+        let now = 2000;
+        let ri = reset_info(&split_sample(now, 0.0, 0.0), now, Scope::Both);
         assert_eq!(ri.remaining, 60 * 45);
         // 45m remaining of a 5h window → 1 - 2700/18000 = 0.85 elapsed.
         assert!((ri.elapsed - 0.85).abs() < 0.001);
+    }
+
+    #[test]
+    fn reset_info_weekly_follows_weekly_even_when_session_sooner() {
+        let now = 2000;
+        let ri = reset_info(&split_sample(now, 0.0, 0.0), now, Scope::Weekly);
+        assert_eq!(ri.remaining, 60 * 60 * 24 * 4);
+    }
+
+    #[test]
+    fn reset_info_worst_follows_the_higher_budget() {
+        let now = 2000;
+        // Weekly is the worse (higher) budget → its reset is shown, despite the
+        // session resetting sooner.
+        let ri = reset_info(&split_sample(now, 0.20, 0.90), now, Scope::Worst);
+        assert_eq!(ri.remaining, 60 * 60 * 24 * 4);
+        // Session is worse → session reset.
+        let ri = reset_info(&split_sample(now, 0.90, 0.20), now, Scope::Worst);
+        assert_eq!(ri.remaining, 60 * 45);
     }
 
     #[test]
