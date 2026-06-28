@@ -1,0 +1,56 @@
+name: Release
+
+# Tag a version (e.g. `git tag v0.1.0 && git push origin v0.1.0`) to build and
+# publish artifacts to a GitHub Release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  artifacts:
+    name: build .deb + tarball
+    # Build on an older Ubuntu for a broad glibc baseline (Pop!_OS 22.04+,
+    # Ubuntu 22.04+, Debian 12+). The applet dlopens Wayland/Vulkan/xkb, so the
+    # build itself only needs pkg-config + libclang (for bindgen).
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config clang libclang-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Build .deb (Pop!_OS / Ubuntu / Debian)
+        run: cargo deb --no-build
+
+      - name: Build portable tarball (other distros)
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          dist="cosmic-applet-claude-usage-${ver}-x86_64-linux"
+          mkdir -p "$dist"
+          cp target/release/cosmic-applet-claude-usage "$dist/"
+          cp data/co.osterberg.ClaudeUsage.desktop "$dist/"
+          cp README.md LICENSE "$dist/"
+          tar czf "${dist}.tar.gz" "$dist"
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/debian/*.deb
+            cosmic-applet-claude-usage-*-x86_64-linux.tar.gz
+          generate_release_notes: true
+          fail_on_unmatched_files: true
