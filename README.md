@@ -43,6 +43,7 @@ first run and whenever a key is unset or unreadable. Keys:
 | scope          | session, weekly, worst, both             | worst       |
 | style          | color-dot, fill-bar, fill-color, ring, ring-color | color-dot |
 | show_percent   | true, false                              | false       |
+| percent_inside_ring | true, false (ring styles: centre vs. beside) | true   |
 | reset_display  | none, text, compact, glow, dual-ring, track | none     |
 | thresholds     | { amber, red } fractions                 | 0.50 / 0.80 |
 | stale_after    | seconds                                  | 600         |

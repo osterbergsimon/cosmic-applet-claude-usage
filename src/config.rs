@@ -36,6 +36,9 @@ pub struct Config {
     pub scope: Scope,
     pub style: Style,
     pub show_percent: bool,
+    /// For ring styles: draw the percentage centred in the ring's hole (true) or
+    /// beside it (false). Beside stays legible alongside the dual-ring time arc.
+    pub percent_inside_ring: bool,
     pub reset_display: ResetDisplay,
     pub thresholds: Thresholds,
     pub stale_after: u64,
@@ -48,6 +51,7 @@ impl Default for Config {
             scope: Scope::Worst,
             style: Style::ColorDot,
             show_percent: false,
+            percent_inside_ring: true,
             reset_display: ResetDisplay::None,
             thresholds: Thresholds { amber: 0.50, red: 0.80 },
             stale_after: 600,
@@ -85,6 +89,7 @@ mod tests {
         assert!(matches!(c.scope, Scope::Worst));
         assert!(matches!(c.style, Style::ColorDot));
         assert_eq!(c.show_percent, false);
+        assert_eq!(c.percent_inside_ring, true);
         assert!(matches!(c.reset_display, ResetDisplay::None));
         assert_eq!(c.thresholds.amber, 0.50);
         assert_eq!(c.thresholds.red, 0.80);

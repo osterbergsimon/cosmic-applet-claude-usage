@@ -316,10 +316,10 @@ fn ring<'a>(g: &Gauge, cfg: &Config, dim: bool, reset: Option<&ResetInfo>) -> El
         String::new()
     };
 
-    // Percentage centred inside the ring (instead of beside it) when enabled —
-    // the number lives in the hole, saving panel width. '%' is dropped; the ring
-    // shape already says "of budget".
-    let center = if cfg.show_percent {
+    // Percentage centred inside the ring's hole when enabled — saves panel width,
+    // but collides with the dual-ring time arc, so it's opt-out (percent beside).
+    let inside = cfg.show_percent && cfg.percent_inside_ring;
+    let center = if inside {
         let n = g.label.trim_end_matches('%');
         let fs = size * 0.40;
         format!(
@@ -342,10 +342,21 @@ fn ring<'a>(g: &Gauge, cfg: &Config, dim: bool, reset: Option<&ResetInfo>) -> El
 </svg>"##,
         stroke = hex(fg),
     );
-    widget::svg(widget::svg::Handle::from_memory(doc.into_bytes()))
+    let ring_el = widget::svg(widget::svg::Handle::from_memory(doc.into_bytes()))
         .width(Length::Fixed(size))
-        .height(Length::Fixed(size))
-        .into()
+        .height(Length::Fixed(size));
+
+    // Percent beside the ring when it isn't drawn inside (e.g. with dual-ring).
+    if cfg.show_percent && !inside {
+        widget::Row::new()
+            .spacing(4)
+            .align_y(Alignment::Center)
+            .push(ring_el)
+            .push(widget::text(g.label.clone()).size(12))
+            .into()
+    } else {
+        ring_el.into()
+    }
 }
 
 pub fn indicator_view<'a>(
@@ -559,7 +570,17 @@ pub fn settings_view<'a>(cfg: &Config) -> Element<'a, Message> {
         .add(item(
             "Show percent",
             widget::toggler(cfg.show_percent).on_toggle(Message::SetShowPercent),
-        ));
+        ))
+        // Only meaningful for ring styles, and only once percent is shown at all.
+        .add_maybe(
+            (cfg.show_percent && matches!(cfg.style, Style::Ring | Style::RingColor)).then(|| {
+                item(
+                    "Percent inside ring",
+                    widget::toggler(cfg.percent_inside_ring)
+                        .on_toggle(Message::SetPercentInsideRing),
+                )
+            }),
+        );
 
     let reset_sec = section()
         .title("Time to reset")

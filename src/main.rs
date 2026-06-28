@@ -70,6 +70,7 @@ pub enum Message {
     SetScope(Scope),
     SetStyle(Style),
     SetShowPercent(bool),
+    SetPercentInsideRing(bool),
     SetResetDisplay(ResetDisplay),
     SetAmber(f32),
     SetRed(f32),
@@ -194,6 +195,11 @@ impl cosmic::Application for Window {
             }
             Message::SetShowPercent(v) => {
                 self.config.show_percent = v;
+                self.save_config();
+                return Task::none();
+            }
+            Message::SetPercentInsideRing(v) => {
+                self.config.percent_inside_ring = v;
                 self.save_config();
                 return Task::none();
             }
