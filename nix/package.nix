@@ -14,12 +14,13 @@
 
 rustPlatform.buildRustPackage {
   pname = "cosmic-applet-claude-usage";
-  version = "0.1.0";
+  version = "0.1.1";
 
   src = lib.cleanSource ../.;
 
   # fetchCargoVendor; recapture with `cargoHash = ""` if Cargo.lock changes.
-  cargoHash = "sha256-Hcf33KOzXhHbMPjOrmMsfcfOs0+tqGpNTvyJvWX3U3g=";
+  # NOTE: a version bump changes Cargo.lock, which changes this hash — re-pin it.
+  cargoHash = "sha256-4QlSGrYzRiJOxo1CrHvLbe3M5jpc01t4eQ5kLDbD+W4=";
 
   __structuredAttrs = true;
 
