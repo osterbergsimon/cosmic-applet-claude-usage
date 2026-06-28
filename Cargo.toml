@@ -1,7 +1,7 @@
 [package]
 name = "cosmic-applet-claude-usage"
 version = "0.1.1"
-edition = "2021"
+edition = "2024"
 description = "Minimal COSMIC panel applet showing Claude Code usage"
 repository = "https://github.com/osterbergsimon/cosmic-applet-claude-usage"
 license = "GPL-3.0-only"
