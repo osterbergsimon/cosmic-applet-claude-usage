@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use crate::config::{Config, ResetDisplay, Style};
-use crate::indicator::{Gauge, IndicatorState, Level};
+use crate::config::{Config, ResetDisplay, Style, Thresholds};
+use crate::indicator::{level_for, Gauge, IndicatorState, Level};
 use crate::usage::{format_countdown, UsageSample};
-use cosmic::iced::{Alignment, Border, Color, Length};
+use cosmic::iced::{Alignment, Background, Border, Color, Length};
 use cosmic::widget;
 use cosmic::Element;
 
@@ -34,6 +34,93 @@ fn hex(c: Color) -> String {
         (c.g * 255.0).round() as u8,
         (c.b * 255.0).round() as u8,
     )
+}
+
+/// Linear per-channel blend between two colours (`t` clamped to 0..1).
+fn lerp(a: Color, b: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    Color::from_rgba(
+        a.r + (b.r - a.r) * t,
+        a.g + (b.g - a.g) * t,
+        a.b + (b.b - a.b) * t,
+        a.a + (b.a - a.a) * t,
+    )
+}
+
+/// The hue a fill *reaches* at fraction `value`: green at empty, blending
+/// through amber at the amber threshold to red at the red threshold. This is
+/// the leading-edge colour of the gradient meter — its hue alone says how close
+/// the budget is to its ceiling.
+fn color_at(value: f32, t: &Thresholds) -> Color {
+    let v = value.clamp(0.0, 1.0);
+    let (g, a, r) = (color(Level::Green), color(Level::Amber), color(Level::Red));
+    if v <= t.amber {
+        lerp(g, a, if t.amber > 0.0 { v / t.amber } else { 1.0 })
+    } else if v < t.red {
+        lerp(a, r, (v - t.amber) / (t.red - t.amber).max(1e-4))
+    } else {
+        r
+    }
+}
+
+/// A left→right linear gradient for the *filled* portion of a meter: green at
+/// the origin, passing through amber/red where those thresholds fall within the
+/// fill, ending on the leading-edge hue. Offsets are relative to the fill width,
+/// so the ramp always reads green→current regardless of how full the bar is.
+fn gradient_fill(value: f32, t: &Thresholds, dim: bool) -> Background {
+    use cosmic::iced::gradient::Linear;
+    use cosmic::iced::Radians;
+    use std::f32::consts::PI;
+    let v = value.clamp(0.0, 1.0);
+    let alpha = if dim { 0.45 } else { 1.0 };
+    let fade = |c: Color| Color { a: c.a * alpha, ..c };
+
+    let mut lin = Linear::new(Radians(PI / 2.0)).add_stop(0.0, fade(color(Level::Green)));
+    if v > 0.0 {
+        if t.amber > 0.0 && t.amber < v {
+            lin = lin.add_stop((t.amber / v).clamp(0.0, 1.0), fade(color(Level::Amber)));
+        }
+        if t.red < v {
+            lin = lin.add_stop((t.red / v).clamp(0.0, 1.0), fade(color(Level::Red)));
+        }
+    }
+    lin = lin.add_stop(1.0, fade(color_at(v, t)));
+    Background::Gradient(lin.into())
+}
+
+/// A horizontal meter: a theme-aware track with a rounded fill. The track tint
+/// derives from the active theme's on-surface colour, so it reads correctly on
+/// both light and dark panels (unlike a hardcoded white alpha).
+fn meter_track<'a>(
+    fill: Background,
+    filled: f32,
+    full: f32,
+    height: f32,
+) -> Element<'a, Message> {
+    let radius = height / 2.0;
+    widget::container(
+        widget::container(
+            widget::Space::new()
+                .width(Length::Fixed(filled))
+                .height(Length::Fixed(height)),
+        )
+        .style(move |_t: &cosmic::Theme| widget::container::Style {
+            background: Some(fill.clone()),
+            border: Border { radius: radius.into(), ..Default::default() },
+            ..Default::default()
+        }),
+    )
+    .width(Length::Fixed(full))
+    .style(move |theme: &cosmic::Theme| {
+        let mut track: Color = theme.cosmic().on_bg_color().into();
+        track.a = 0.12;
+        widget::container::Style {
+            background: Some(track.into()),
+            border: Border { radius: radius.into(), ..Default::default() },
+            ..Default::default()
+        }
+    })
+    .into()
 }
 
 /// Time-to-reset context for the soonest-resetting budget.
@@ -156,43 +243,23 @@ fn dot<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
 }
 
 fn bar<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
-    let full = 40.0_f32;
-    let height = 6.0_f32;
+    let full = 44.0_f32;
+    let height = 7.0_f32;
     let filled = crate::fill::fill_width(g.value, full);
 
-    // FillColor uses the level color; FillBar uses a neutral accent.
-    let mut fill_color = match cfg.style {
-        Style::FillColor => color(g.level),
-        _ => Color::from_rgb(0.45, 0.65, 0.95),
+    // FillColor reads the proximity gradient (green→current hue); FillBar stays a
+    // single neutral accent — its job is "how full", not "how alarming".
+    let fill = match cfg.style {
+        Style::FillColor => gradient_fill(g.value, &cfg.thresholds, dim),
+        _ => {
+            let mut c = ACCENT;
+            if dim {
+                c.a = 0.45;
+            }
+            Background::Color(c)
+        }
     };
-    if dim {
-        fill_color.a = 0.45;
-    }
-
-    let track = widget::container(
-        widget::container(
-            widget::Space::new()
-                .width(Length::Fixed(filled))
-                .height(Length::Fixed(height)),
-        )
-        .style(move |_t| widget::container::Style {
-            background: Some(fill_color.into()),
-            border: Border {
-                radius: (height / 2.0).into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        }),
-    )
-    .width(Length::Fixed(full))
-    .style(move |_t| widget::container::Style {
-        background: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.15).into()),
-        border: Border {
-            radius: (height / 2.0).into(),
-            ..Default::default()
-        },
-        ..Default::default()
-    });
+    let track = meter_track(fill, filled, full, height);
 
     if cfg.show_percent {
         widget::Row::new()
@@ -202,7 +269,7 @@ fn bar<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
             .push(widget::text(g.label.clone()).size(12))
             .into()
     } else {
-        track.into()
+        track
     }
 }
 
@@ -218,8 +285,10 @@ fn ring<'a>(g: &Gauge, cfg: &Config, dim: bool, reset: Option<&ResetInfo>) -> El
     let r = (size - sw) / 2.0; // keep the stroke inside the viewBox
     let circ = 2.0 * PI * r;
     let filled = g.value.clamp(0.0, 1.0) * circ;
+    // RingColor takes the gradient's leading-edge hue (the ring can't carry a
+    // swept gradient cleanly, so the arc colour alone encodes proximity).
     let fg = match cfg.style {
-        Style::RingColor => color(g.level),
+        Style::RingColor => color_at(g.value, &cfg.thresholds),
         _ => ACCENT,
     };
     let alpha = if dim { 0.45 } else { 1.0 };
@@ -247,30 +316,36 @@ fn ring<'a>(g: &Gauge, cfg: &Config, dim: bool, reset: Option<&ResetInfo>) -> El
         String::new()
     };
 
-    // Layers: faint full track, optional time track, usage arc, optional inner arc.
+    // Percentage centred inside the ring (instead of beside it) when enabled —
+    // the number lives in the hole, saving panel width. '%' is dropped; the ring
+    // shape already says "of budget".
+    let center = if cfg.show_percent {
+        let n = g.label.trim_end_matches('%');
+        let fs = size * 0.40;
+        format!(
+            r##"<text x="{c}" y="{cy:.3}" text-anchor="middle" font-family="sans-serif" font-weight="600" font-size="{fs:.2}" fill="#ffffff" fill-opacity="{a:.2}">{n}</text>"##,
+            cy = c + fs / 3.0,
+            a = 0.85 * alpha,
+        )
+    } else {
+        String::new()
+    };
+
+    // Layers: faint full track, optional time track, usage arc, optional inner arc, optional label.
     let doc = format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}">
 <circle cx="{c}" cy="{c}" r="{r:.3}" fill="none" stroke="#ffffff" stroke-opacity="0.15" stroke-width="{sw}"/>
 {track_arc}
 <circle cx="{c}" cy="{c}" r="{r:.3}" fill="none" stroke="{stroke}" stroke-opacity="{alpha:.2}" stroke-width="{sw}" stroke-linecap="round" stroke-dasharray="{filled:.3} {circ:.3}" transform="rotate(-90 {c} {c})"/>
 {inner_arc}
+{center}
 </svg>"##,
         stroke = hex(fg),
     );
-    let ring_el = widget::svg(widget::svg::Handle::from_memory(doc.into_bytes()))
+    widget::svg(widget::svg::Handle::from_memory(doc.into_bytes()))
         .width(Length::Fixed(size))
-        .height(Length::Fixed(size));
-
-    if cfg.show_percent {
-        widget::Row::new()
-            .spacing(4)
-            .align_y(Alignment::Center)
-            .push(ring_el)
-            .push(widget::text(g.label.clone()).size(12))
-            .into()
-    } else {
-        ring_el.into()
-    }
+        .height(Length::Fixed(size))
+        .into()
 }
 
 pub fn indicator_view<'a>(
@@ -329,40 +404,76 @@ pub fn indicator_view<'a>(
     }
 }
 
-/// A single budget block for the popup: name + percent, then a reset countdown.
-fn budget_row<'a>(name: &str, value: f32, reset: i64, now: i64) -> Element<'a, Message> {
+/// Full popup width for the budget meters (also sets the popup's overall width).
+const POPUP_METER: f32 = 240.0;
+
+/// One budget as a gauge block: name + hero percentage on a row, a full-width
+/// gradient meter beneath, and the reset countdown as a quiet caption.
+fn budget_block<'a>(
+    name: &str,
+    value: f32,
+    reset: i64,
+    now: i64,
+    t: &Thresholds,
+) -> Element<'a, Message> {
     let pct = (value * 100.0).round() as i64;
-    let countdown = format_countdown(reset - now);
+    let lvl = level_for(value, t);
+    let header = widget::Row::new()
+        .align_y(Alignment::Center)
+        .push(widget::text::body(name.to_string()))
+        .push(widget::Space::new().width(Length::Fill).height(Length::Fixed(0.0)))
+        .push(
+            widget::text(format!("{pct}%"))
+                .size(22)
+                .class(cosmic::theme::Text::Color(color(lvl))),
+        );
+    let meter = meter_track(
+        gradient_fill(value, t, false),
+        crate::fill::fill_width(value, POPUP_METER),
+        POPUP_METER,
+        8.0,
+    );
+    let countdown = widget::text::caption(format!("resets in {}", format_countdown(reset - now)))
+        .class(cosmic::theme::Text::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.6)));
     widget::Column::new()
-        .spacing(2)
-        .push(widget::text(format!("{name}: {pct}%")).size(14))
-        .push(widget::text(format!("resets in {countdown}")).size(11))
+        .spacing(5)
+        .push(header)
+        .push(meter)
+        .push(countdown)
         .into()
 }
 
-/// The click popup contents: both budgets with percent and reset countdowns,
-/// plus a button to open the settings panel.
-pub fn popup_view<'a>(sample: &UsageSample, now: i64, _cfg: &Config) -> Element<'a, Message> {
+/// The click popup contents: both budgets as gauge blocks with a divider
+/// between, and a right-aligned settings link in the footer.
+pub fn popup_view<'a>(sample: &UsageSample, now: i64, cfg: &Config) -> Element<'a, Message> {
+    let t = &cfg.thresholds;
     widget::Column::new()
-        .spacing(12)
-        .padding(12)
-        .push(budget_row(
-            "Session (5h)",
+        .spacing(14)
+        .padding(14)
+        .push(budget_block(
+            "Session · 5h",
             sample.session,
             sample.session_reset,
             now,
+            t,
         ))
-        .push(budget_row(
-            "Weekly (7d)",
+        .push(widget::divider::horizontal::light())
+        .push(budget_block(
+            "Weekly · 7d",
             sample.weekly,
             sample.weekly_reset,
             now,
+            t,
         ))
-        // Small, low-prominence settings link (button::text renders too large/heavy).
+        // Footer: low-prominence settings link, pushed to the right.
         .push(
-            widget::button::custom(widget::text("⚙ Settings").size(11))
-                .class(cosmic::theme::Button::Text)
-                .on_press(Message::ToggleSettings),
+            widget::Row::new()
+                .push(widget::Space::new().width(Length::Fill).height(Length::Fixed(0.0)))
+                .push(
+                    widget::button::custom(widget::text("⚙ Settings").size(12))
+                        .class(cosmic::theme::Button::Text)
+                        .on_press(Message::ToggleSettings),
+                ),
         )
         .into()
 }
@@ -387,11 +498,31 @@ fn settings_preview<'a>(cfg: &Config) -> Element<'a, Message> {
         remaining: 18 * 60,
     };
     let preview = indicator_view(&IndicatorState::Live(gauges), cfg, Some(demo_reset));
-    widget::Row::new()
-        .spacing(8)
+    let body = widget::Row::new()
         .align_y(Alignment::Center)
-        .push(widget::text("Preview").size(12))
-        .push(preview)
+        .push(widget::text::caption("Preview"))
+        .push(widget::Space::new().width(Length::Fill).height(Length::Fixed(0.0)))
+        .push(preview);
+    // Frame it as a card so it reads as a live sample, not part of the form.
+    widget::container(body)
+        .padding(12)
+        .width(Length::Fill)
+        .style(|theme: &cosmic::Theme| {
+            let on = theme.cosmic().on_bg_color();
+            let mut bg: Color = on.into();
+            bg.a = 0.05;
+            let mut edge: Color = on.into();
+            edge.a = 0.12;
+            widget::container::Style {
+                background: Some(bg.into()),
+                border: Border {
+                    radius: 8.0.into(),
+                    width: 1.0,
+                    color: edge,
+                },
+                ..Default::default()
+            }
+        })
         .into()
 }
 
@@ -399,66 +530,84 @@ fn settings_preview<'a>(cfg: &Config) -> Element<'a, Message> {
 /// control emits a `Set*` message which mutates and persists the config.
 pub fn settings_view<'a>(cfg: &Config) -> Element<'a, Message> {
     use crate::settings::{
-        scope_from_index, scope_index, style_from_index, style_index, SCOPE_LABELS, STYLE_LABELS,
+        reset_from_index, reset_index, scope_from_index, scope_index, style_from_index,
+        style_index, RESET_LABELS, SCOPE_LABELS, STYLE_LABELS,
     };
+    use widget::settings::{item, section};
 
-    let scope = widget::dropdown(
-        &SCOPE_LABELS[..],
-        Some(scope_index(cfg.scope)),
-        |i| Message::SetScope(scope_from_index(i)),
-    );
-
-    let style = widget::dropdown(
-        &STYLE_LABELS[..],
-        Some(style_index(cfg.style)),
-        |i| Message::SetStyle(style_from_index(i)),
-    );
+    let scope = widget::dropdown(&SCOPE_LABELS[..], Some(scope_index(cfg.scope)), |i| {
+        Message::SetScope(scope_from_index(i))
+    });
+    let style = widget::dropdown(&STYLE_LABELS[..], Some(style_index(cfg.style)), |i| {
+        Message::SetStyle(style_from_index(i))
+    });
+    let reset = widget::dropdown(&RESET_LABELS[..], Some(reset_index(cfg.reset_display)), |i| {
+        Message::SetResetDisplay(reset_from_index(i))
+    });
 
     let amber_pct = (cfg.thresholds.amber * 100.0).round() as i64;
     let red_pct = (cfg.thresholds.red * 100.0).round() as i64;
     // The iced slider requires its value type to impl `Into<f64>`, which `u64`
     // does not; use `u32` for the widget and map back to `u64` in the message.
     let stale_mins = (cfg.stale_after / 60).max(1) as u32;
+    let slider_w = Length::Fixed(160.0);
 
-    widget::Column::new()
-        .spacing(8)
-        .padding(12)
-        .push(widget::text("Settings").size(16))
-        .push(settings_preview(cfg))
-        .push(widget::text("Scope").size(12))
-        .push(scope)
-        .push(widget::text("Style").size(12))
-        .push(style)
-        .push(
-            widget::toggler(cfg.show_percent)
-                .on_toggle(Message::SetShowPercent)
-                .label("Show percent".to_string())
-                .text_size(14),
-        )
-        .push(widget::text("Reset display").size(12))
-        .push(widget::dropdown(
-            &crate::settings::RESET_LABELS[..],
-            Some(crate::settings::reset_index(cfg.reset_display)),
-            |i| Message::SetResetDisplay(crate::settings::reset_from_index(i)),
+    let indicator = section()
+        .title("Indicator")
+        .add(item("Scope", scope))
+        .add(item("Style", style))
+        .add(item(
+            "Show percent",
+            widget::toggler(cfg.show_percent).on_toggle(Message::SetShowPercent),
+        ));
+
+    let reset_sec = section()
+        .title("Time to reset")
+        .add(item("Display", reset));
+
+    // Amber and red are one decision — where green turns to caution and caution
+    // to alarm — so they share a section.
+    let thresholds = section()
+        .title("Colour thresholds")
+        .add(item(
+            format!("Amber at {amber_pct}%"),
+            // step 0.01: the slider's default step is 1.0, which on a 0..=1 range
+            // would only allow 0% or 100%.
+            widget::slider(0.0..=1.0, cfg.thresholds.amber, Message::SetAmber)
+                .step(0.01_f32)
+                .width(slider_w),
         ))
-        .push(widget::text(format!("Amber threshold: {amber_pct}%")).size(12))
-        // step 0.01: the slider's default step is 1.0, which on a 0..=1 range
-        // would only allow 0% or 100%.
-        .push(widget::slider(0.0..=1.0, cfg.thresholds.amber, Message::SetAmber).step(0.01_f32))
-        .push(widget::text(format!("Red threshold: {red_pct}%")).size(12))
-        .push(widget::slider(0.0..=1.0, cfg.thresholds.red, Message::SetRed).step(0.01_f32))
-        .push(widget::text(format!("Stale after: {stale_mins} min")).size(12))
-        .push(widget::slider(1..=30u32, stale_mins, |v| {
-            Message::SetStaleAfterMins(v as u64)
-        }))
-        .push(widget::text("History path").size(12))
-        .push(
+        .add(item(
+            format!("Red at {red_pct}%"),
+            widget::slider(0.0..=1.0, cfg.thresholds.red, Message::SetRed)
+                .step(0.01_f32)
+                .width(slider_w),
+        ));
+
+    let data = section()
+        .title("Data")
+        .add(item(
+            format!("Stale after {stale_mins} min"),
+            widget::slider(1..=30u32, stale_mins, |v| Message::SetStaleAfterMins(v as u64))
+                .width(slider_w),
+        ))
+        .add(
             widget::text_input(
                 "~/.claude/usage-history.jsonl",
                 cfg.history_path.clone().unwrap_or_default(),
             )
             .on_input(Message::SetHistoryPath),
-        )
+        );
+
+    widget::Column::new()
+        .spacing(16)
+        .padding(16)
+        .push(widget::text::title3("Claude usage"))
+        .push(settings_preview(cfg))
+        .push(indicator)
+        .push(reset_sec)
+        .push(thresholds)
+        .push(data)
         .push(widget::button::text("← Back").on_press(Message::ShowInfo))
         .into()
 }
@@ -491,5 +640,28 @@ mod ttests {
         assert_eq!(compact_reset(20 * 60).0, "20m");
         assert_eq!(compact_reset(3 * 3600).0, "3h");
         assert_eq!(compact_reset(2 * 86_400).0, "2d");
+    }
+
+    #[test]
+    fn color_at_hits_threshold_anchors() {
+        let t = Thresholds { amber: 0.50, red: 0.80 };
+        let eq = |a: Color, b: Color| {
+            (a.r - b.r).abs() < 1e-4 && (a.g - b.g).abs() < 1e-4 && (a.b - b.b).abs() < 1e-4
+        };
+        // Anchored exactly on green/amber/red at empty / amber / red thresholds.
+        assert!(eq(color_at(0.0, &t), color(Level::Green)));
+        assert!(eq(color_at(0.50, &t), color(Level::Amber)));
+        assert!(eq(color_at(0.80, &t), color(Level::Red)));
+        // Saturates at red past the red threshold.
+        assert!(eq(color_at(1.0, &t), color(Level::Red)));
+    }
+
+    #[test]
+    fn color_at_blends_between_anchors() {
+        let t = Thresholds { amber: 0.50, red: 0.80 };
+        // Midway green→amber is a genuine blend: between the two on every channel.
+        let mid = color_at(0.25, &t);
+        let (g, a) = (color(Level::Green), color(Level::Amber));
+        assert!(mid.r > g.r && mid.r < a.r);
     }
 }
