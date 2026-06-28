@@ -2,7 +2,9 @@
 
 A minimal COSMIC panel applet showing Claude Code usage as a quiet color-coded
 indicator. Green → amber → red as you approach your session (5h) or weekly (7d)
-limit. Hover for exact percentages; click for reset countdowns.
+limit. Click for exact percentages and reset countdowns; right-click for
+settings. Several indicator styles (dot, bars, ring, vertical bar) and
+time-to-reset displays, all previewed live in the settings panel.
 
 ## Data source
 
@@ -10,28 +12,54 @@ Reads the last line of `~/.claude/usage-history.jsonl`, which Claude Code's
 status line appends to while running. Values are "last known" between sessions;
 the indicator dims when data is older than `stale_after`.
 
-## Build & install (NixOS)
+## Install
 
-Rust is not installed globally; the toolchain and libcosmic's native build/runtime
-dependencies come from the project `flake.nix` devShell. All `cargo`/`just`
-commands run inside `nix develop -c …`. The first build is slow — it fetches and
-compiles libcosmic from source.
+After installing by either route below, add the applet to your panel:
+**COSMIC Settings → Panel (or Dock) → Applets → add "Claude Usage"**. The first
+build is slow either way — it compiles libcosmic from source.
 
-Dev iteration (no sudo, no /usr):
+### Nix / NixOS (flake)
 
-    nix develop -c just install-dev   # → ~/.local/bin + ~/.local/share/applications
+The flake exposes `packages.default` and `overlays.default`.
 
-Permanent install via home-manager — import `nix/overlay.nix` (in this repo) into
-your dotfiles flake's `nixpkgs.overlays`, add `cosmic-applet-claude-usage` to your
-home packages, fill in the libcosmic `outputHashes` (first build prints the hash),
-then:
+Quick, imperative (installs into your profile; `~/.nix-profile/share` is already
+on `XDG_DATA_DIRS`, so COSMIC finds the applet):
 
-    sudo nixos-rebuild switch --flake ~/nixos-config#HOSTNAME
+    nix profile install github:osterbergsimon/cosmic-applet-claude-usage
 
-Then add `co.osterberg.ClaudeUsage` to the panel via COSMIC Settings → Panel → Applets.
+Declarative — add the input and pull the package in via the overlay:
 
-> Packaging is versioned in this repo at `nix/overlay.nix` — an overlay you wire
-> into your dotfiles flake. See the comment at the top of that file.
+```nix
+# flake.nix
+inputs.cosmic-applet-claude-usage.url =
+  "github:osterbergsimon/cosmic-applet-claude-usage";
+
+# in your nixosConfiguration / homeConfiguration modules:
+nixpkgs.overlays = [ inputs.cosmic-applet-claude-usage.overlays.default ];
+environment.systemPackages = [ pkgs.cosmic-applet-claude-usage ];  # or home.packages
+```
+
+then `sudo nixos-rebuild switch` (or `home-manager switch`).
+
+### Other COSMIC distributions (build from source)
+
+Needs a Rust toolchain, `just`, `pkg-config`, and the libraries COSMIC itself
+already pulls in (Wayland, libxkbcommon, the Vulkan loader, libGL, fontconfig,
+freetype). On a working COSMIC desktop the runtime libs are present; you only
+add the build tools. Then:
+
+    cargo build --release
+    sudo just install                # → /usr/bin + /usr/share/applications
+    # or: sudo just prefix=/usr/local install
+    # uninstall: sudo just uninstall
+
+### Dev iteration (this repo, on Nix)
+
+Rust isn't global here; the toolchain + native deps come from the `flake.nix`
+devShell, so `cargo`/`just` run inside `nix develop -c …`:
+
+    nix develop -c just test
+    nix develop -c just install-dev   # → ~/.local/bin (LD_LIBRARY_PATH-wrapped)
 
 ## Config
 
@@ -55,10 +83,13 @@ style. Keys:
 
 ## Layout
 
-- `flake.nix` — Nix devShell providing the Rust toolchain + Wayland/Vulkan libs
-- `nix/overlay.nix` — nixpkgs overlay packaging the applet (wire into your dotfiles)
+- `flake.nix` — flake outputs: `packages.default`, `overlays.default`, devShell
+- `nix/package.nix` — the buildRustPackage derivation (shared by flake + overlay)
+- `nix/overlay.nix` — nixpkgs overlay re-exporting that package
 - `Cargo.toml` — crate manifest; libcosmic pinned by `rev`
-- `src/main.rs` — the libcosmic applet
+- `src/main.rs` — the libcosmic applet (Application impl, messages, popups)
+- `src/view.rs` — all rendering (indicators, meters, popup, settings)
 - `src/config.rs` — config struct + cosmic-config loader
+- `src/settings.rs` — pure label/variant mapping for the settings dropdowns
 - `data/co.osterberg.ClaudeUsage.desktop` — COSMIC applet desktop entry
-- `justfile` — build / dev-install / test recipes
+- `justfile` — system `install` / `install-dev` / `build` / `test` recipes

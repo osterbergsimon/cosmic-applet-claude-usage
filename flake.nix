@@ -6,10 +6,11 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { nixpkgs, flake-utils, ... }:
+  outputs = { self, nixpkgs, flake-utils, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
+        package = pkgs.callPackage ./nix/package.nix { };
         # Native deps libcosmic/iced/winit need to build and run on Wayland.
         runtimeLibs = with pkgs; [
           wayland libxkbcommon vulkan-loader libGL
@@ -17,6 +18,10 @@
         ];
         nativeDeps = with pkgs; [ pkg-config makeWrapper ];
       in {
+        # `nix build`, `nix run`, `nix profile install github:…#default`.
+        packages.default = package;
+        packages.cosmic-applet-claude-usage = package;
+
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = nativeDeps ++ (with pkgs; [ rustc cargo rustfmt clippy just ]);
           buildInputs = runtimeLibs;
@@ -24,5 +29,9 @@
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtimeLibs;
           RUST_BACKTRACE = "1";
         };
-      });
+      })
+    // {
+      # System-independent: drop into another config's `nixpkgs.overlays`.
+      overlays.default = import ./nix/overlay.nix;
+    };
 }

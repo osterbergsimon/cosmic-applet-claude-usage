@@ -2,6 +2,10 @@
 name = "cosmic-applet-claude-usage"
 version = "0.1.0"
 edition = "2021"
+description = "Minimal COSMIC panel applet showing Claude Code usage"
+repository = "https://github.com/osterbergsimon/cosmic-applet-claude-usage"
+license = "GPL-3.0-only"
+readme = "README.md"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
