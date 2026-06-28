@@ -16,7 +16,20 @@ rustPlatform.buildRustPackage {
   pname = "cosmic-applet-claude-usage";
   version = "0.1.1";
 
-  src = lib.cleanSource ../.;
+  # Only the files the build, tests, and install actually use. Keeping README,
+  # screenshots, CI config, flake, etc. OUT of the build source means doc-only
+  # changes don't change the derivation — so `nix build` is a cache hit instead
+  # of recompiling libcosmic from scratch.
+  src = lib.fileset.toSource {
+    root = ../.;
+    fileset = lib.fileset.unions [
+      ../Cargo.toml
+      ../Cargo.lock
+      ../src
+      ../data
+      ../tests
+    ];
+  };
 
   # fetchCargoVendor; recapture with `cargoHash = ""` if Cargo.lock changes.
   # NOTE: a version bump changes Cargo.lock, which changes this hash — re-pin it.
