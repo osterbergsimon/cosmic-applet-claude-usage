@@ -291,14 +291,7 @@ fn bar<'a>(g: &Gauge, cfg: &Config, dim: bool, reset: Option<&ResetInfo>) -> Ele
     // ring's track arc.
     let body: Element<'a, Message> = match (cfg.reset_display, reset) {
         (ResetDisplay::Track, Some(ri)) => {
-            let mut tc = ACCENT;
-            tc.a = if dim { 0.4 } else { 0.7 };
-            let under = meter_track(
-                Background::Color(tc),
-                crate::fill::fill_width(ri.elapsed, full),
-                full,
-                3.0,
-            );
+            let under = meter_track(time_fill(dim), crate::fill::fill_width(ri.elapsed, full), full, 3.0);
             widget::Column::new().spacing(2).push(track).push(under).into()
         }
         _ => track,
@@ -316,16 +309,12 @@ fn bar<'a>(g: &Gauge, cfg: &Config, dim: bool, reset: Option<&ResetInfo>) -> Ele
     }
 }
 
-/// A vertical level column filling bottom→top with the proximity gradient. Reads
-/// like a tiny VU meter; in `Both` scope two columns sit side by side.
-fn vbar<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
-    let w = 7.0_f32;
-    let h = 16.0_f32;
+/// A vertical bar of width `w`, height `h`, filled bottom→top to `value` with
+/// `fill`, over a theme-aware track. The primitive behind the vertical-bar style
+/// and the standalone time column.
+fn vcolumn<'a>(fill: Background, value: f32, w: f32, h: f32) -> Element<'a, Message> {
     let radius = w / 2.0;
-    let filled_h = crate::fill::fill_width(g.value, h);
-    // 0 radians = bottom→top, so green sits at the base and the leading hue on top.
-    let fill = gradient_at(g.value, &cfg.thresholds, dim, 0.0);
-
+    let filled_h = crate::fill::fill_width(value, h);
     let fill_box = widget::container(
         widget::Space::new()
             .width(Length::Fixed(w))
@@ -336,8 +325,7 @@ fn vbar<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
         border: Border { radius: radius.into(), ..Default::default() },
         ..Default::default()
     });
-
-    let column = widget::container(fill_box)
+    widget::container(fill_box)
         .width(Length::Fixed(w))
         .height(Length::Fixed(h))
         .align_y(Alignment::End) // grow from the bottom
@@ -349,17 +337,45 @@ fn vbar<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
                 border: Border { radius: radius.into(), ..Default::default() },
                 ..Default::default()
             }
-        });
+        })
+        .into()
+}
+
+/// Accent-blue background for the time tracks (under-bar / time column), dimmed
+/// when the data is stale. Distinct from the usage gradient so the two read apart.
+fn time_fill(dim: bool) -> Background {
+    let mut c = ACCENT;
+    c.a = if dim { 0.4 } else { 0.7 };
+    Background::Color(c)
+}
+
+/// A vertical level column filling bottom→top with the proximity gradient. Reads
+/// like a tiny VU meter; in `Both` scope two columns sit side by side. With
+/// `reset_display = Track`, a thinner time column grows alongside it.
+fn vbar<'a>(g: &Gauge, cfg: &Config, dim: bool, reset: Option<&ResetInfo>) -> Element<'a, Message> {
+    let h = 16.0_f32;
+    // 0 radians = bottom→top, so green sits at the base and the leading hue on top.
+    let usage = vcolumn(gradient_at(g.value, &cfg.thresholds, dim, 0.0), g.value, 7.0, h);
+
+    let body: Element<'a, Message> = match (cfg.reset_display, reset) {
+        (ResetDisplay::Track, Some(ri)) => widget::Row::new()
+            .spacing(3)
+            .align_y(Alignment::End)
+            .push(usage)
+            .push(vcolumn(time_fill(dim), ri.elapsed, 5.0, h))
+            .into(),
+        _ => usage,
+    };
 
     if cfg.show_percent {
         widget::Row::new()
             .spacing(4)
             .align_y(Alignment::Center)
-            .push(column)
+            .push(body)
             .push(widget::text(g.label.clone()).size(12))
             .into()
     } else {
-        column.into()
+        body
     }
 }
 
@@ -469,7 +485,7 @@ pub fn indicator_view<'a>(
         let el = match cfg.style {
             Style::ColorDot => dot(g, cfg, dim),
             Style::FillBar | Style::FillColor => bar(g, cfg, dim, reset.as_ref()),
-            Style::VBar => vbar(g, cfg, dim),
+            Style::VBar => vbar(g, cfg, dim, reset.as_ref()),
             Style::Ring | Style::RingColor => ring(g, cfg, dim, reset.as_ref()),
         };
         row = row.push(el);
@@ -493,13 +509,24 @@ pub fn indicator_view<'a>(
             with_reset_text(indicator, s, c)
         }
         ResetDisplay::Glow => glow_wrap(indicator, ri.remaining),
+        // A standalone vertical time bar to the right of any indicator.
+        ResetDisplay::TimeColumn => widget::Row::new()
+            .spacing(6)
+            .align_y(Alignment::End)
+            .push(indicator)
+            .push(vcolumn(time_fill(dim), ri.elapsed, 5.0, 16.0))
+            .into(),
         // Track renders inside the indicator: an arc on rings, an under-bar on
-        // horizontal bars. DualRing is ring-only. Anything not drawn inside falls
-        // back to compact text so the setting is never a no-op.
+        // horizontal bars, a companion column on vertical bars. DualRing is
+        // ring-only. Anything not drawn inside falls back to compact text so the
+        // setting is never a no-op.
         ResetDisplay::DualRing | ResetDisplay::Track => {
-            let is_bar = matches!(cfg.style, Style::FillBar | Style::FillColor);
+            let in_shape = matches!(
+                cfg.style,
+                Style::FillBar | Style::FillColor | Style::VBar
+            );
             let drawn_inside =
-                is_ring || (matches!(cfg.reset_display, ResetDisplay::Track) && is_bar);
+                is_ring || (matches!(cfg.reset_display, ResetDisplay::Track) && in_shape);
             if drawn_inside {
                 indicator
             } else {
@@ -636,8 +663,8 @@ fn settings_preview<'a>(cfg: &Config) -> Element<'a, Message> {
 /// control emits a `Set*` message which mutates and persists the config.
 pub fn settings_view<'a>(cfg: &Config) -> Element<'a, Message> {
     use crate::settings::{
-        reset_from_index, reset_index, scope_from_index, scope_index, style_from_index,
-        style_index, RESET_LABELS, SCOPE_LABELS, STYLE_LABELS,
+        resets_for, scope_from_index, scope_index, style_from_index, style_index, SCOPE_LABELS,
+        STYLE_LABELS,
     };
     use widget::settings::{item, section};
 
@@ -647,8 +674,13 @@ pub fn settings_view<'a>(cfg: &Config) -> Element<'a, Message> {
     let style = widget::dropdown(&STYLE_LABELS[..], Some(style_index(cfg.style)), |i| {
         Message::SetStyle(style_from_index(i))
     });
-    let reset = widget::dropdown(&RESET_LABELS[..], Some(reset_index(cfg.reset_display)), |i| {
-        Message::SetResetDisplay(reset_from_index(i))
+    // Only the reset modes this style can actually render (e.g. no Dual ring on
+    // a bar). The two slices are parallel, so the dropdown index maps straight
+    // back to a variant.
+    let (reset_labels, reset_variants) = resets_for(cfg.style);
+    let reset_sel = reset_variants.iter().position(|v| *v == cfg.reset_display);
+    let reset = widget::dropdown(reset_labels, reset_sel, move |i| {
+        Message::SetResetDisplay(reset_variants[i])
     });
 
     let amber_pct = (cfg.thresholds.amber * 100.0).round() as i64;

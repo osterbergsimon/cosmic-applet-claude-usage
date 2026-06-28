@@ -36,7 +36,11 @@ Then add `co.osterberg.ClaudeUsage` to the panel via COSMIC Settings â†’ Panel â
 ## Config
 
 Stored via cosmic-config (`co.osterberg.ClaudeUsage` v1). Defaults are used on
-first run and whenever a key is unset or unreadable. Keys:
+first run and whenever a key is unset or unreadable. The settings panel only
+offers reset displays the chosen style can render (e.g. `dual-ring` is ring-only;
+`track` is an arc on rings, an under-bar on horizontal bars, a companion column
+on vertical bars). `time-column` (a standalone vertical time bar) works with any
+style. Keys:
 
 | Key            | Values                                   | Default     |
 |----------------|------------------------------------------|-------------|
@@ -44,7 +48,7 @@ first run and whenever a key is unset or unreadable. Keys:
 | style          | color-dot, fill-bar, fill-color, ring, ring-color, v-bar | color-dot |
 | show_percent   | true, false                              | false       |
 | percent_inside_ring | true, false (ring styles: centre vs. beside) | true   |
-| reset_display  | none, text, compact, glow, dual-ring, track (arc on rings, under-bar on bars) | none |
+| reset_display  | none, text, compact, glow, dual-ring, track, time-column | none |
 | thresholds     | { amber, red } fractions                 | 0.50 / 0.80 |
 | stale_after    | seconds                                  | 600         |
 | history_path   | path override (optional)                 | (unset)     |

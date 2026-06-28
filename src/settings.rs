@@ -6,7 +6,6 @@
 use crate::config::{ResetDisplay, Scope, Style};
 
 pub const SCOPE_LABELS: [&str; 4] = ["Session (5h)", "Weekly (7d)", "Worst of both", "Both"];
-pub const RESET_LABELS: [&str; 6] = ["Off", "Text", "Compact", "Glow", "Dual ring", "Track time"];
 pub const STYLE_LABELS: [&str; 6] = [
     "Color dot",
     "Fill bar",
@@ -56,26 +55,63 @@ pub fn style_from_index(i: usize) -> Style {
     }
 }
 
-pub fn reset_index(r: ResetDisplay) -> usize {
-    match r {
-        ResetDisplay::None => 0,
-        ResetDisplay::Text => 1,
-        ResetDisplay::Compact => 2,
-        ResetDisplay::Glow => 3,
-        ResetDisplay::DualRing => 4,
-        ResetDisplay::Track => 5,
+// Reset-display options offered per style, as `'static` (label, variant) lists
+// so the dropdown can borrow them for the element's lifetime. Universal modes
+// come first, then any style-specific arc/bar mode, then the universal time
+// column. Incompatible modes (e.g. Dual ring on a bar) simply aren't listed.
+pub const DOT_RESET_LABELS: [&str; 5] = ["Off", "Text", "Compact", "Glow", "Time column"];
+pub const DOT_RESET_VARIANTS: [ResetDisplay; 5] = [
+    ResetDisplay::None,
+    ResetDisplay::Text,
+    ResetDisplay::Compact,
+    ResetDisplay::Glow,
+    ResetDisplay::TimeColumn,
+];
+pub const BAR_RESET_LABELS: [&str; 6] =
+    ["Off", "Text", "Compact", "Glow", "Track time", "Time column"];
+pub const BAR_RESET_VARIANTS: [ResetDisplay; 6] = [
+    ResetDisplay::None,
+    ResetDisplay::Text,
+    ResetDisplay::Compact,
+    ResetDisplay::Glow,
+    ResetDisplay::Track,
+    ResetDisplay::TimeColumn,
+];
+pub const RING_RESET_LABELS: [&str; 7] = [
+    "Off",
+    "Text",
+    "Compact",
+    "Glow",
+    "Dual ring",
+    "Track time",
+    "Time column",
+];
+pub const RING_RESET_VARIANTS: [ResetDisplay; 7] = [
+    ResetDisplay::None,
+    ResetDisplay::Text,
+    ResetDisplay::Compact,
+    ResetDisplay::Glow,
+    ResetDisplay::DualRing,
+    ResetDisplay::Track,
+    ResetDisplay::TimeColumn,
+];
+
+/// The (labels, variants) the Reset-display dropdown should offer for `style`.
+/// The two slices are parallel: index `i` maps label `i` to variant `i`.
+pub fn resets_for(style: Style) -> (&'static [&'static str], &'static [ResetDisplay]) {
+    match style {
+        Style::Ring | Style::RingColor => (&RING_RESET_LABELS, &RING_RESET_VARIANTS),
+        Style::FillBar | Style::FillColor | Style::VBar => {
+            (&BAR_RESET_LABELS, &BAR_RESET_VARIANTS)
+        }
+        Style::ColorDot => (&DOT_RESET_LABELS, &DOT_RESET_VARIANTS),
     }
 }
 
-pub fn reset_from_index(i: usize) -> ResetDisplay {
-    match i {
-        1 => ResetDisplay::Text,
-        2 => ResetDisplay::Compact,
-        3 => ResetDisplay::Glow,
-        4 => ResetDisplay::DualRing,
-        5 => ResetDisplay::Track,
-        _ => ResetDisplay::None,
-    }
+/// Whether `reset` is a valid choice for `style` (used to auto-correct a stored
+/// value when the style changes to one that can't render it).
+pub fn reset_valid(style: Style, reset: ResetDisplay) -> bool {
+    resets_for(style).1.contains(&reset)
 }
 
 #[cfg(test)]
@@ -121,17 +157,44 @@ mod tests {
         assert_eq!(style_index(Style::VBar), 5);
     }
 
+    const ALL_STYLES: [Style; 6] = [
+        Style::ColorDot,
+        Style::FillBar,
+        Style::FillColor,
+        Style::Ring,
+        Style::RingColor,
+        Style::VBar,
+    ];
+
     #[test]
-    fn reset_round_trips_every_variant() {
-        for r in [
-            ResetDisplay::None,
-            ResetDisplay::Text,
-            ResetDisplay::Compact,
-            ResetDisplay::Glow,
-            ResetDisplay::DualRing,
-            ResetDisplay::Track,
-        ] {
-            assert_eq!(reset_from_index(reset_index(r)), r);
+    fn reset_options_match_style_capabilities() {
+        use ResetDisplay::*;
+        // Dot: universal modes only.
+        assert!(!reset_valid(Style::ColorDot, Track));
+        assert!(!reset_valid(Style::ColorDot, DualRing));
+        // Bars and vbar: Track yes, Dual ring no.
+        for s in [Style::FillBar, Style::FillColor, Style::VBar] {
+            assert!(reset_valid(s, Track));
+            assert!(!reset_valid(s, DualRing));
+        }
+        // Rings: both arc modes.
+        for s in [Style::Ring, Style::RingColor] {
+            assert!(reset_valid(s, Track));
+            assert!(reset_valid(s, DualRing));
+        }
+        // Universal modes (incl. the time column) are valid for every style.
+        for s in ALL_STYLES {
+            for r in [None, Text, Compact, Glow, TimeColumn] {
+                assert!(reset_valid(s, r), "{r:?} should be valid for {s:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn reset_labels_and_variants_are_parallel() {
+        for s in ALL_STYLES {
+            let (labels, variants) = resets_for(s);
+            assert_eq!(labels.len(), variants.len());
         }
     }
 
@@ -139,6 +202,5 @@ mod tests {
     fn label_array_lengths() {
         assert_eq!(SCOPE_LABELS.len(), 4);
         assert_eq!(STYLE_LABELS.len(), 6);
-        assert_eq!(RESET_LABELS.len(), 6);
     }
 }

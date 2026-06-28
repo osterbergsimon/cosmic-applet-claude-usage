@@ -25,6 +25,8 @@ pub enum ResetDisplay {
     Glow,
     DualRing,
     Track,
+    /// A standalone vertical time bar beside the indicator; works with any style.
+    TimeColumn,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

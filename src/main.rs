@@ -190,6 +190,11 @@ impl cosmic::Application for Window {
             }
             Message::SetStyle(style) => {
                 self.config.style = style;
+                // Drop a reset mode the new style can't render (e.g. Dual ring on
+                // a bar), so the stored value stays consistent with the UI.
+                if !settings::reset_valid(style, self.config.reset_display) {
+                    self.config.reset_display = ResetDisplay::None;
+                }
                 self.save_config();
                 return Task::none();
             }
