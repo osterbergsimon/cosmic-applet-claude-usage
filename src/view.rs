@@ -538,7 +538,7 @@ pub fn indicator_view<'a>(
 }
 
 /// Full popup width for the budget meters (also sets the popup's overall width).
-const POPUP_METER: f32 = 240.0;
+const POPUP_METER: f32 = 200.0;
 
 /// One budget as a gauge block: name + hero percentage on a row, a full-width
 /// gradient meter beneath, and the reset countdown as a quiet caption.
@@ -551,27 +551,28 @@ fn budget_block<'a>(
 ) -> Element<'a, Message> {
     let pct = (value * 100.0).round() as i64;
     let lvl = level_for(value, t);
-    let header = widget::Row::new()
+    // Bar with its percentage to the right, on one row; the reset countdown sits
+    // on its own caption line below.
+    let bar_row = widget::Row::new()
+        .spacing(8)
         .align_y(Alignment::Center)
-        .push(widget::text::body(name.to_string()))
-        .push(widget::Space::new().width(Length::Fill).height(Length::Fixed(0.0)))
+        .push(meter_track(
+            gradient_fill(value, t, false),
+            crate::fill::fill_width(value, POPUP_METER),
+            POPUP_METER,
+            8.0,
+        ))
         .push(
             widget::text(format!("{pct}%"))
-                .size(22)
+                .size(16)
                 .class(cosmic::theme::Text::Color(color(lvl))),
         );
-    let meter = meter_track(
-        gradient_fill(value, t, false),
-        crate::fill::fill_width(value, POPUP_METER),
-        POPUP_METER,
-        8.0,
-    );
     let countdown = widget::text::caption(format!("resets in {}", format_countdown(reset - now)))
         .class(cosmic::theme::Text::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.6)));
     widget::Column::new()
         .spacing(5)
-        .push(header)
-        .push(meter)
+        .push(widget::text::body(name.to_string()))
+        .push(bar_row)
         .push(countdown)
         .into()
 }
