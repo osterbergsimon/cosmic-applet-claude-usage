@@ -6,6 +6,8 @@ limit. Click for exact percentages and reset countdowns; right-click for
 settings. Several indicator styles (dot, bars, ring, vertical bar) and
 time-to-reset displays, all previewed live in the settings panel.
 
+<img src="res/screenshots/popup.png" alt="Claude Usage applet — ring indicators in the panel and the click popup" width="300"/>
+
 ## Data source
 
 Reads the last line of `~/.claude/usage-history.jsonl`, which Claude Code's
