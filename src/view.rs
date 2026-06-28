@@ -68,14 +68,20 @@ fn color_at(value: f32, t: &Thresholds) -> Color {
 /// fill, ending on the leading-edge hue. Offsets are relative to the fill width,
 /// so the ramp always reads green→current regardless of how full the bar is.
 fn gradient_fill(value: f32, t: &Thresholds, dim: bool) -> Background {
+    // PI/2 radians = left→right (iced angles run clockwise from 12 o'clock).
+    gradient_at(value, t, dim, std::f32::consts::PI / 2.0)
+}
+
+/// As `gradient_fill`, but along an arbitrary direction. `angle` is iced's
+/// gradient angle in radians (0 = bottom→top); used for the vertical-bar style.
+fn gradient_at(value: f32, t: &Thresholds, dim: bool, angle: f32) -> Background {
     use cosmic::iced::gradient::Linear;
     use cosmic::iced::Radians;
-    use std::f32::consts::PI;
     let v = value.clamp(0.0, 1.0);
     let alpha = if dim { 0.45 } else { 1.0 };
     let fade = |c: Color| Color { a: c.a * alpha, ..c };
 
-    let mut lin = Linear::new(Radians(PI / 2.0)).add_stop(0.0, fade(color(Level::Green)));
+    let mut lin = Linear::new(Radians(angle)).add_stop(0.0, fade(color(Level::Green)));
     if v > 0.0 {
         if t.amber > 0.0 && t.amber < v {
             lin = lin.add_stop((t.amber / v).clamp(0.0, 1.0), fade(color(Level::Amber)));
@@ -261,7 +267,7 @@ fn dot<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
     }
 }
 
-fn bar<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
+fn bar<'a>(g: &Gauge, cfg: &Config, dim: bool, reset: Option<&ResetInfo>) -> Element<'a, Message> {
     let full = 44.0_f32;
     let height = 7.0_f32;
     let filled = crate::fill::fill_width(g.value, full);
@@ -280,15 +286,80 @@ fn bar<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
     };
     let track = meter_track(fill, filled, full, height);
 
+    // Track mode draws a thin time under-bar (accent-blue, distinct from the
+    // usage fill) growing with elapsed-toward-reset — the bar analogue of the
+    // ring's track arc.
+    let body: Element<'a, Message> = match (cfg.reset_display, reset) {
+        (ResetDisplay::Track, Some(ri)) => {
+            let mut tc = ACCENT;
+            tc.a = if dim { 0.4 } else { 0.7 };
+            let under = meter_track(
+                Background::Color(tc),
+                crate::fill::fill_width(ri.elapsed, full),
+                full,
+                3.0,
+            );
+            widget::Column::new().spacing(2).push(track).push(under).into()
+        }
+        _ => track,
+    };
+
     if cfg.show_percent {
         widget::Row::new()
             .spacing(4)
             .align_y(Alignment::Center)
-            .push(track)
+            .push(body)
             .push(widget::text(g.label.clone()).size(12))
             .into()
     } else {
-        track
+        body
+    }
+}
+
+/// A vertical level column filling bottom→top with the proximity gradient. Reads
+/// like a tiny VU meter; in `Both` scope two columns sit side by side.
+fn vbar<'a>(g: &Gauge, cfg: &Config, dim: bool) -> Element<'a, Message> {
+    let w = 7.0_f32;
+    let h = 16.0_f32;
+    let radius = w / 2.0;
+    let filled_h = crate::fill::fill_width(g.value, h);
+    // 0 radians = bottom→top, so green sits at the base and the leading hue on top.
+    let fill = gradient_at(g.value, &cfg.thresholds, dim, 0.0);
+
+    let fill_box = widget::container(
+        widget::Space::new()
+            .width(Length::Fixed(w))
+            .height(Length::Fixed(filled_h)),
+    )
+    .style(move |_t: &cosmic::Theme| widget::container::Style {
+        background: Some(fill.clone()),
+        border: Border { radius: radius.into(), ..Default::default() },
+        ..Default::default()
+    });
+
+    let column = widget::container(fill_box)
+        .width(Length::Fixed(w))
+        .height(Length::Fixed(h))
+        .align_y(Alignment::End) // grow from the bottom
+        .style(move |theme: &cosmic::Theme| {
+            let mut track: Color = theme.cosmic().on_bg_color().into();
+            track.a = 0.12;
+            widget::container::Style {
+                background: Some(track.into()),
+                border: Border { radius: radius.into(), ..Default::default() },
+                ..Default::default()
+            }
+        });
+
+    if cfg.show_percent {
+        widget::Row::new()
+            .spacing(4)
+            .align_y(Alignment::Center)
+            .push(column)
+            .push(widget::text(g.label.clone()).size(12))
+            .into()
+    } else {
+        column.into()
     }
 }
 
@@ -397,7 +468,8 @@ pub fn indicator_view<'a>(
     for g in gauges {
         let el = match cfg.style {
             Style::ColorDot => dot(g, cfg, dim),
-            Style::FillBar | Style::FillColor => bar(g, cfg, dim),
+            Style::FillBar | Style::FillColor => bar(g, cfg, dim, reset.as_ref()),
+            Style::VBar => vbar(g, cfg, dim),
             Style::Ring | Style::RingColor => ring(g, cfg, dim, reset.as_ref()),
         };
         row = row.push(el);
@@ -421,10 +493,14 @@ pub fn indicator_view<'a>(
             with_reset_text(indicator, s, c)
         }
         ResetDisplay::Glow => glow_wrap(indicator, ri.remaining),
-        // Ring-specific modes render inside ring(); fall back to compact text
-        // on the non-ring styles so the setting is never a no-op.
+        // Track renders inside the indicator: an arc on rings, an under-bar on
+        // horizontal bars. DualRing is ring-only. Anything not drawn inside falls
+        // back to compact text so the setting is never a no-op.
         ResetDisplay::DualRing | ResetDisplay::Track => {
-            if is_ring {
+            let is_bar = matches!(cfg.style, Style::FillBar | Style::FillColor);
+            let drawn_inside =
+                is_ring || (matches!(cfg.reset_display, ResetDisplay::Track) && is_bar);
+            if drawn_inside {
                 indicator
             } else {
                 let (s, c) = compact_reset(ri.remaining);

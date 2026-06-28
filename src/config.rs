@@ -13,7 +13,7 @@ pub enum Scope { Session, Weekly, Worst, Both }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum Style { ColorDot, FillBar, FillColor, Ring, RingColor }
+pub enum Style { ColorDot, FillBar, FillColor, Ring, RingColor, VBar }
 
 /// How time-to-reset is surfaced on the panel (the popup always shows it).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

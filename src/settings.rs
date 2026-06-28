@@ -7,8 +7,14 @@ use crate::config::{ResetDisplay, Scope, Style};
 
 pub const SCOPE_LABELS: [&str; 4] = ["Session (5h)", "Weekly (7d)", "Worst of both", "Both"];
 pub const RESET_LABELS: [&str; 6] = ["Off", "Text", "Compact", "Glow", "Dual ring", "Track time"];
-pub const STYLE_LABELS: [&str; 5] =
-    ["Color dot", "Fill bar", "Fill color", "Ring", "Ring (color)"];
+pub const STYLE_LABELS: [&str; 6] = [
+    "Color dot",
+    "Fill bar",
+    "Fill color",
+    "Ring",
+    "Ring (color)",
+    "Vertical bar",
+];
 
 pub fn scope_index(s: Scope) -> usize {
     match s {
@@ -35,6 +41,7 @@ pub fn style_index(s: Style) -> usize {
         Style::FillColor => 2,
         Style::Ring => 3,
         Style::RingColor => 4,
+        Style::VBar => 5,
     }
 }
 
@@ -44,6 +51,7 @@ pub fn style_from_index(i: usize) -> Style {
         2 => Style::FillColor,
         3 => Style::Ring,
         4 => Style::RingColor,
+        5 => Style::VBar,
         _ => Style::ColorDot,
     }
 }
@@ -89,6 +97,7 @@ mod tests {
             Style::FillColor,
             Style::Ring,
             Style::RingColor,
+            Style::VBar,
         ] {
             assert_eq!(style_from_index(style_index(s)), s);
         }
@@ -109,6 +118,7 @@ mod tests {
         assert_eq!(style_index(Style::FillColor), 2);
         assert_eq!(style_index(Style::Ring), 3);
         assert_eq!(style_index(Style::RingColor), 4);
+        assert_eq!(style_index(Style::VBar), 5);
     }
 
     #[test]
@@ -128,7 +138,7 @@ mod tests {
     #[test]
     fn label_array_lengths() {
         assert_eq!(SCOPE_LABELS.len(), 4);
-        assert_eq!(STYLE_LABELS.len(), 5);
+        assert_eq!(STYLE_LABELS.len(), 6);
         assert_eq!(RESET_LABELS.len(), 6);
     }
 }
