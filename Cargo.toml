@@ -7,6 +7,22 @@ repository = "https://github.com/osterbergsimon/cosmic-applet-claude-usage"
 license = "GPL-3.0-only"
 readme = "README.md"
 
+# Debian/Ubuntu/Pop!_OS packaging via `cargo deb`. Runtime libs are dlopened, so
+# dpkg-shlibdeps ($auto) won't see them — list them explicitly. They're present
+# on any COSMIC desktop already.
+[package.metadata.deb]
+maintainer = "Simon Österberg <5444093+osterbergsimon@users.noreply.github.com>"
+copyright = "2026 Simon Österberg"
+license-file = ["LICENSE", "0"]
+section = "utils"
+priority = "optional"
+extended-description = "A minimal COSMIC panel applet showing Claude Code usage as a quiet, color-coded indicator with several styles and time-to-reset displays."
+depends = "$auto, libwayland-client0, libxkbcommon0, libvulkan1, libgl1"
+assets = [
+    ["target/release/cosmic-applet-claude-usage", "usr/bin/", "755"],
+    ["data/co.osterberg.ClaudeUsage.desktop", "usr/share/applications/", "644"],
+]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

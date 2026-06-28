@@ -14,11 +14,24 @@ the indicator dims when data is older than `stale_after`.
 
 ## Install
 
-After installing by either route below, add the applet to your panel:
-**COSMIC Settings → Panel (or Dock) → Applets → add "Claude Usage"**. The first
-build is slow either way — it compiles libcosmic from source.
+After installing by any route below, add the applet to your panel:
+**COSMIC Settings → Panel (or Dock) → Applets → add "Claude Usage"**.
 
-### Nix / NixOS (flake)
+### Prebuilt package (Pop!_OS / Ubuntu / Debian)
+
+Grab the latest `.deb` from the [Releases page][releases] and install it:
+
+    sudo apt install ./cosmic-applet-claude-usage_*_amd64.deb
+
+For other distros, the release also ships a portable `*-x86_64-linux.tar.gz`
+(binary + desktop entry) — drop the binary on your `PATH` and the `.desktop`
+file in `~/.local/share/applications/`.
+
+[releases]: https://github.com/osterbergsimon/cosmic-applet-claude-usage/releases
+
+> The two source routes below compile libcosmic from scratch — the first build is slow.
+
+### Build from source — Nix / NixOS (flake)
 
 The flake exposes `packages.default` and `overlays.default`.
 
@@ -41,12 +54,12 @@ environment.systemPackages = [ pkgs.cosmic-applet-claude-usage ];  # or home.pac
 
 then `sudo nixos-rebuild switch` (or `home-manager switch`).
 
-### Other COSMIC distributions (build from source)
+### Build from source — other COSMIC distros
 
-Needs a Rust toolchain, `just`, `pkg-config`, and the libraries COSMIC itself
-already pulls in (Wayland, libxkbcommon, the Vulkan loader, libGL, fontconfig,
-freetype). On a working COSMIC desktop the runtime libs are present; you only
-add the build tools. Then:
+Needs a Rust toolchain, `just`, `pkg-config`, and `clang`/`libclang` (for
+bindgen). Everything the applet renders with — Wayland, libxkbcommon, the Vulkan
+loader, libGL — is dlopened at runtime and already present on a COSMIC desktop,
+so you only add the build tools. Then:
 
     cargo build --release
     sudo just install                # → /usr/bin + /usr/share/applications
