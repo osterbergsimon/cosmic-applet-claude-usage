@@ -29,18 +29,21 @@ file in `~/.local/share/applications/`.
 
 [releases]: https://github.com/osterbergsimon/cosmic-applet-claude-usage/releases
 
-> The two source routes below compile libcosmic from scratch — the first build is slow.
+### Nix / NixOS (flake, prebuilt via Cachix)
 
-### Build from source — Nix / NixOS (flake)
+A [Cachix][cachix] binary cache serves prebuilt builds, so installing skips
+compiling libcosmic. Enable the cache, then install:
 
-The flake exposes `packages.default` and `overlays.default`.
-
-Quick, imperative (installs into your profile; `~/.nix-profile/share` is already
-on `XDG_DATA_DIRS`, so COSMIC finds the applet):
-
+    cachix use cosmic-applet-claude-usage
     nix profile install github:osterbergsimon/cosmic-applet-claude-usage
 
-Declarative — add the input and pull the package in via the overlay:
+Without the `cachix` CLI, add the substituter to your Nix config instead:
+
+    extra-substituters = https://cosmic-applet-claude-usage.cachix.org
+    extra-trusted-public-keys = cosmic-applet-claude-usage.cachix.org-1:2zrqPNPlHd1hO+hDmaZ73NJJ9ym+dCFfuUVQGmN63yk=
+
+Declarative — add the input and pull the package in via the overlay (set the
+substituter above in `nix.settings` so the build is fetched, not compiled):
 
 ```nix
 # flake.nix
@@ -54,7 +57,12 @@ environment.systemPackages = [ pkgs.cosmic-applet-claude-usage ];  # or home.pac
 
 then `sudo nixos-rebuild switch` (or `home-manager switch`).
 
+[cachix]: https://app.cachix.org/cache/cosmic-applet-claude-usage
+
 ### Build from source — other COSMIC distros
+
+> Compiles libcosmic from scratch — the first build is slow.
+
 
 Needs a Rust toolchain, `just`, `pkg-config`, and `clang`/`libclang` (for
 bindgen). Everything the applet renders with — Wayland, libxkbcommon, the Vulkan
