@@ -14,7 +14,7 @@
 
 rustPlatform.buildRustPackage {
   pname = "cosmic-applet-claude-usage";
-  version = "0.1.1";
+  version = "0.1.2";
 
   # Only the files the build, tests, and install actually use. Keeping README,
   # screenshots, CI config, flake, etc. OUT of the build source means doc-only

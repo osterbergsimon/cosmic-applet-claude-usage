@@ -33,6 +33,10 @@ response of a session. It needs `jq`.
 just install-statusline          # or: bash contrib/install-statusline.sh
 ```
 
+Installed from the `.deb`/tarball instead of a checkout? The same scripts ship
+at `/usr/share/cosmic-applet-claude-usage/` (and in the tarball's `contrib/`),
+so run `bash /usr/share/cosmic-applet-claude-usage/install-statusline.sh`.
+
 This copies the writer to `~/.claude/usage-writer.sh` and wires it into Claude
 Code. If you **have no statusLine**, it sets one (backing up `settings.json`
 first); the writer also prints a compact `session N% · weekly N%` line for your

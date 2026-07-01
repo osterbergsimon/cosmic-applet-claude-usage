@@ -1,6 +1,6 @@
 [package]
 name = "cosmic-applet-claude-usage"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Minimal COSMIC panel applet showing Claude Code usage"
 repository = "https://github.com/osterbergsimon/cosmic-applet-claude-usage"
@@ -21,6 +21,10 @@ depends = "$auto, libwayland-client0, libxkbcommon0, libvulkan1, libgl1"
 assets = [
     ["target/release/cosmic-applet-claude-usage", "usr/bin/", "755"],
     ["data/co.osterberg.ClaudeUsage.desktop", "usr/share/applications/", "644"],
+    # statusLine writer + installer, so packaged users can feed the applet
+    # (see README, "Feeding the applet").
+    ["contrib/usage-writer.sh", "usr/share/cosmic-applet-claude-usage/", "755"],
+    ["contrib/install-statusline.sh", "usr/share/cosmic-applet-claude-usage/", "755"],
 ]
 
 [dependencies]
