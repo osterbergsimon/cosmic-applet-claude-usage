@@ -33,7 +33,7 @@ rustPlatform.buildRustPackage {
 
   # fetchCargoVendor; recapture with `cargoHash = ""` if Cargo.lock changes.
   # NOTE: a version bump changes Cargo.lock, which changes this hash — re-pin it.
-  cargoHash = "sha256-4QlSGrYzRiJOxo1CrHvLbe3M5jpc01t4eQ5kLDbD+W4=";
+  cargoHash = "sha256-J5ybHWZUOHwKqTwvRn0DSqY6qVw1lIp4IwhmjkTiaGk=";
 
   __structuredAttrs = true;
 
