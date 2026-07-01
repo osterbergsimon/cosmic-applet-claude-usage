@@ -17,6 +17,13 @@ build:
 
 test:
     cargo test
+    bash contrib/test-usage-writer.sh
+    bash contrib/test-install-statusline.sh
+
+# Install the usage-writer statusLine into Claude Code (~/.claude) so the applet
+# gets fed. Leaves an existing statusLine untouched (prints how to chain it).
+install-statusline:
+    bash contrib/install-statusline.sh
 
 # The desktop Exec stays a bare command name, resolved via PATH — correct for an
 # FHS prefix whose bin/ is on PATH. (The Nix package rewrites it to an absolute
