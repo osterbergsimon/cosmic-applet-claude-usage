@@ -39,6 +39,21 @@ first); the writer also prints a compact `session N% · weekly N%` line for your
 terminal. If you **already have a statusLine**, it is left untouched and the
 installer prints how to chain the writer into it. Re-running is safe.
 
+Verify feeding at any time (changes nothing; exits non-zero if not wired):
+
+```bash
+bash contrib/install-statusline.sh --check
+```
+
+> **If you regenerate your statusLine** — e.g. via Claude Code's `/statusline`,
+> or by editing `settings.json`'s `statusLine` command — that overwrites
+> whatever fed the applet, and feeding silently stops (the indicator will dim as
+> data goes stale). Nothing wired through the statusLine can survive this, since
+> the data is *only* available there. The most durable setup is to paste the
+> **persist block** from `usage-writer.sh` into your *own* statusLine script, so
+> it travels with your edits. After any statusLine change, re-run the installer
+> or `--check` to confirm.
+
 ### Manual setup
 
 Prefer to wire it yourself? Point `~/.claude/settings.json` at the script:
