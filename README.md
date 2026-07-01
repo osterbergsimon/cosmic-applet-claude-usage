@@ -10,9 +10,55 @@ time-to-reset displays, all previewed live in the settings panel.
 
 ## Data source
 
-Reads the last line of `~/.claude/usage-history.jsonl`, which Claude Code's
-status line appends to while running. Values are "last known" between sessions;
-the indicator dims when data is older than `stale_after`.
+Reads the last line of `~/.claude/usage-history.jsonl`. Values are "last known"
+between sessions; the indicator dims when data is older than `stale_after`.
+
+Claude Code only exposes the 5-hour and 7-day rate-limit figures on the JSON it
+pipes to a **statusLine** command — nothing writes `usage-history.jsonl` on its
+own. So the applet ships a small statusLine that persists them: see
+[Feeding the applet](#feeding-the-applet).
+
+## Feeding the applet
+
+[`contrib/usage-writer.sh`](contrib/usage-writer.sh) is a statusLine that reads
+Claude Code's render JSON and appends the session/weekly usage to
+`~/.claude/usage-history.jsonl` in the format the applet expects (deduping
+identical samples, with a 120 s heartbeat so the staleness clock stays fresh).
+The figures only appear for Claude.ai Pro/Max accounts, after the first API
+response of a session. It needs `jq`.
+
+### Install it
+
+```bash
+just install-statusline          # or: bash contrib/install-statusline.sh
+```
+
+This copies the writer to `~/.claude/usage-writer.sh` and wires it into Claude
+Code. If you **have no statusLine**, it sets one (backing up `settings.json`
+first); the writer also prints a compact `session N% · weekly N%` line for your
+terminal. If you **already have a statusLine**, it is left untouched and the
+installer prints how to chain the writer into it. Re-running is safe.
+
+### Manual setup
+
+Prefer to wire it yourself? Point `~/.claude/settings.json` at the script:
+
+```json
+"statusLine": { "type": "command", "command": "bash ~/.claude/usage-writer.sh" }
+```
+
+or, to keep an existing statusLine, tee the render JSON through the writer:
+
+```bash
+input=$(cat)
+printf '%s' "$input" | bash ~/.claude/usage-writer.sh >/dev/null
+printf '%s' "$input" | your-existing-statusline
+```
+
+Override the output path or heartbeat with the `CLAUDE_USAGE_HISTORY` and
+`CLAUDE_USAGE_HEARTBEAT` environment variables. The writer and installer are
+covered by `contrib/test-usage-writer.sh` and `contrib/test-install-statusline.sh`
+(both run under `just test`).
 
 ## Install
 
