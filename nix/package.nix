@@ -14,7 +14,7 @@
 
 rustPlatform.buildRustPackage {
   pname = "cosmic-applet-claude-usage";
-  version = "0.1.1";
+  version = "0.1.2";
 
   # Only the files the build, tests, and install actually use. Keeping README,
   # screenshots, CI config, flake, etc. OUT of the build source means doc-only
@@ -33,7 +33,7 @@ rustPlatform.buildRustPackage {
 
   # fetchCargoVendor; recapture with `cargoHash = ""` if Cargo.lock changes.
   # NOTE: a version bump changes Cargo.lock, which changes this hash — re-pin it.
-  cargoHash = "sha256-4QlSGrYzRiJOxo1CrHvLbe3M5jpc01t4eQ5kLDbD+W4=";
+  cargoHash = "sha256-J5ybHWZUOHwKqTwvRn0DSqY6qVw1lIp4IwhmjkTiaGk=";
 
   __structuredAttrs = true;
 

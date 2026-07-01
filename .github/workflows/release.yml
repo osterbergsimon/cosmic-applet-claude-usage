@@ -47,6 +47,7 @@ jobs:
           cp target/release/cosmic-applet-claude-usage "$dist/"
           cp data/co.osterberg.ClaudeUsage.desktop "$dist/"
           cp README.md LICENSE "$dist/"
+          cp -r contrib "$dist/"
           tar czf "${dist}.tar.gz" "$dist"
 
       - name: Publish to GitHub Release
